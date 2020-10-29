@@ -5,6 +5,7 @@ Some pre-defined networks for ease of use are defined in this script
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 class ReinforceNetwork(nn.Module):
     def __init__(self, input_size, n_actions):
@@ -26,7 +27,7 @@ class ActorCriticNetwork(nn.Module):
             nn.Linear(obs_size, 128),
             nn.ReLU(),
         )
-        self.actor_path = nn.Linear(128,n_actions)
+        self.actor_path = nn.Linear(128, n_actions)
         self.critic_path = nn.Linear(128, 1)
 
     def forward(self, x):
@@ -34,3 +35,62 @@ class ActorCriticNetwork(nn.Module):
         actor = F.softmax(self.actor_path(x))
         critic = self.critic_path(x)
         return actor, critic
+
+
+def fanin_init(size, fanin=None):
+    '''
+    Initialization explained in the DDQN paper
+    :param size:
+    :param fanin:
+    :return:
+    '''
+    fanin = fanin or size[0]
+    v = 1. / np.sqrt(fanin)
+    return torch.Tensor(size).uniform_(-v, v)
+
+class ActorNetwork(nn.Module):
+    def __init__(self, n_states, n_actions, device='cpu'):
+        super(ActorNetwork, self).__init__()
+        self.fc1 = nn.Linear(n_states, 300)
+        self.fc2 = nn.Linear(300, 400)
+        self.fc3 = nn.Linear(400, n_actions)
+        self.init_weights()
+        self.device = device
+        self.to(device)
+
+    def init_weights(self, init_w=3e-3):
+        self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
+        self.fc2.weight.data = fanin_init(self.fc2.weight.data.size())
+        self.fc3.weight.data.uniform_(-init_w, init_w)
+
+    def forward(self, observation):
+        x = self.fc1(observation.float())
+        x = F.relu(x)
+        x = self.fc2(x)
+        x = F.relu(x)
+        x = self.fc3(x)
+        x = torch.tanh(x)
+        return x
+
+class CriticNetwork(nn.Module):
+    def __init__(self, n_states, n_actions, device='cpu'):
+        super(CriticNetwork, self).__init__()
+        self.fc1 = nn.Linear(n_states, 300)
+        self.fc2 = nn.Linear(300+n_actions, 400)
+        self.fc3 = nn.Linear(400, n_actions)
+        self.init_weights()
+        self.device = device
+        self.to(device)
+
+    def init_weights(self, init_w=3e-3):
+        self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
+        self.fc2.weight.data = fanin_init(self.fc2.weight.data.size())
+        self.fc3.weight.data.uniform_(-init_w, init_w)
+
+    def forward(self, observation, actions):
+        x = self.fc1(observation.float())
+        x = F.relu(x)
+        x = self.fc2(torch.cat([x, actions.float()],1))
+        x = F.relu(x)
+        x = self.fc3(x)
+        return x

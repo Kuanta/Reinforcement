@@ -26,7 +26,7 @@ class Trainer:
     def train(self):
         if self.opts.episodic:
             for _ in range(self.opts.n_epochs):
-                reward = self.agent.learn(self.env, self.opts.n_episodes)
+                self.agent.learn(self.env, self.opts.n_episodes)
         else:
             # TODO: Implement continuous training
             pass
@@ -36,8 +36,8 @@ class Trainer:
             for _ in range(self.opts.n_episodes):
                 curr_state = self.env.reset()
                 while True:
-                    action, _ = self.agent.act(curr_state)
-                    obs, rew, done, _ = self.env.step(action)
+                    action = self.agent.act(curr_state)
+                    obs, rew, done = self.env.step(action.cpu().detach().numpy())
                     curr_state = obs
                     self.env.render()
                     if done:

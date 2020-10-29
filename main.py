@@ -23,7 +23,7 @@ trnOpts = trn.TrainOpts()
 trnOpts.n_epochs = 100
 trnOpts.n_episodes = 100
 trainer = trn.Trainer(agent=acAgent, env=env, opts=trnOpts)
-#trainer.train()
+trainer.train()
 trainer.test()
 acAgent.save_model("AcAgent_1")
 

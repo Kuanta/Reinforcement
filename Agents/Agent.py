@@ -28,6 +28,9 @@ class Agent:
         '''
         raise NotImplementedError
 
+    def reset(self):
+        raise NotImplementedError
+
     def save_model(self, PATH):
         raise NotImplementedError
 

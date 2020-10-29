@@ -31,3 +31,26 @@ def calc_returns(rewards, discount=0.9, n=-1):
         sum_r = r + discount * sum_r
         returns.append(sum_r)
     return list(reversed(returns))
+
+def polyak_update(target, source, p=0.5):
+    '''
+    Updates the parameters of the target network. If p = 0, no update, if p = 1 completely update with the source params
+    :param target: Network to update
+    :param source: Source network
+    :param p: Averaging param
+    :return:
+    '''
+    for target_param, param in zip(target.parameters(), source.parameters()):
+        target_param.data.copy_(
+            target_param.data * (1.0 - p) + param.data * p
+        )
+
+
+def freeze_network(network):
+    for p in network.parameters():
+        p.requires_grad = False
+
+
+def unfreeze_network(network):
+    for p in network.parameters():
+        p.requires_grad = True
