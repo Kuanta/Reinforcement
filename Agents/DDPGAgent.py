@@ -69,7 +69,7 @@ class DDPGAGent(Agent):
                 noise = torch.randn(action.shape, dtype=torch.float32) * math.sqrt(self.opts.noise_var)
                 action = action + noise.to(self.actor_network.device).float()
         # TODO: Action can be saturated here
-        #action = action.clamp(self.opts.act_limit_lower, self.opts.act_limit_upper)
+        action = action.clamp(self.opts.act_limit_lower, self.opts.act_limit_upper)
         return action
 
     def learn(self, environment: Environment, n_episodes: int):
@@ -79,49 +79,49 @@ class DDPGAGent(Agent):
             curr_state = torch.tensor(environment.reset()).to(device=self.actor_network.device)
             episode_rewards = []
             while True:
-                self.critic_optimizer.zero_grad()
-                self.actor_optimizer.zero_grad()
-                action = self.act(curr_state, add_noise=True)
-                next_state, reward, done = environment.step(action.cpu().detach().numpy())
+                action = self.act(curr_state, add_noise=True).cpu().detach().numpy()
+                next_state, reward, done = environment.step(action)
                 episode_rewards.append(reward)
-                self.exp_buffer.add_experience(curr_state, action, torch.tensor(reward), torch.tensor(next_state), torch.tensor(done))
+                self.exp_buffer.add_experience(curr_state, torch.tensor(action), torch.tensor(reward), torch.tensor(next_state), torch.tensor(done))
                 if done:
-                    mean_episode_reward = np.array(episode_rewards).mean()
+                    mean_episode_reward = np.array(episode_rewards).sum()
                     avg_rewards.append(mean_episode_reward)
-                    print("End of episode with mean reward: {}".format(mean_episode_reward))
+                    print("End of episode with total reward: {}".format(mean_episode_reward))
                     break
                 if self.exp_buffer.is_accumulated():  # Do the updates
                     # Sample experiences
                     self.critic_network.eval()
                     s_states, s_actions, s_rewards, s_next_states, s_done =\
                         self.exp_buffer.sample_tensor(self.opts.exp_batch_size, device=self.actor_network.device, dtype=torch.float32)
-                    critic = self.critic_network.forward(s_states.detach(), s_actions.detach())
+
+                    critic = self.critic_network.forward(s_states, s_actions)  # TODO: Why need detach() at actions?
                     target_actions = self.target_actor_network.forward(s_next_states)
                     target_critics = self.target_critic_network.forward(s_next_states, target_actions)
                     target = s_rewards.view(-1,1) + self.opts.discount*(1-s_done.view(-1,1))*target_critics
 
-
                     # Run Gradient Descent on critic network
+                    self.critic_optimizer.zero_grad()
                     self.critic_network.train()  # Enable train mode
-                    critic_loss = torch.nn.functional.mse_loss(critic, target)
+                    critic_loss = torch.nn.functional.mse_loss(critic, target.detach())
                     critic_loss.backward()
                     self.critic_optimizer.step()
 
                     # Run Gradient Ascent on actor network
-                    freeze_network(self.critic_network)
+                    self.actor_optimizer.zero_grad()
                     self.actor_network.train()  # Enable train mode
-                    actor_loss = -self.critic_network(s_states, self.actor_network(s_states))
+                    actor_out = self.actor_network(s_states)
+                    actor_loss = -self.critic_network(s_states, actor_out)
                     actor_loss = actor_loss.mean()
                     actor_loss.backward()
                     self.actor_optimizer.step()
-                    unfreeze_network(self.critic_network)
+                    #print(self.actor_network.fc3.weight.grad)
 
-                    n_update_iter += 1
-                    if n_update_iter > 0 and (n_update_iter%self.opts.target_update_delay == 0):
-                        self.update_target_networks(0.5)
+                    self.update_target_networks(0.2)
 
                 curr_state = torch.tensor(next_state).float().to(self.actor_network.device)
+                curr_state.requires_grad = False
                 self.opts.noise_var = self.opts.noise_var*self.opts.noise_var_decay
+
         return avg_rewards
 
     def reset(self):
