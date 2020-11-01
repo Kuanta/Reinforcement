@@ -13,11 +13,13 @@ critic_network = CriticNetwork(n_states=obs_size, n_actions=act_size, device="cu
 opts = DDPGAgentOptions()
 opts.act_limit_upper = 2
 opts.act_limit_lower = -2
-opts.critic_learning_rate = 0.01
-opts.actor_learning_rate = 0.01
+opts.critic_learning_rate = 0.0001
+opts.actor_learning_rate = 0.0001
 opts.noise_var = 0.5
 opts.target_update_delay = 10
-opts.noise_var_decay = 1
+opts.noise_epsilon = 1  # When this is lower than 0, no noise will be applied
+opts.noise_depsilon = 1/50000  # At each iteration, substract this from noise epsilon
+opts.exp_batch_size = 64
 agent = DDPGAGent(actor_network=actor_network, critic_network=critic_network, opts=opts)
 #agent.load_model("ddpg_agent")
 trnOpts = trn.TrainOpts()

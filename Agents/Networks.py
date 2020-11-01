@@ -51,9 +51,9 @@ def fanin_init(size, fanin=None):
 class ActorNetwork(nn.Module):
     def __init__(self, n_states, n_actions, device='cpu'):
         super(ActorNetwork, self).__init__()
-        self.fc1 = nn.Linear(n_states, 300)
-        self.fc2 = nn.Linear(300, 400)
-        self.fc3 = nn.Linear(400, n_actions)
+        self.fc1 = nn.Linear(n_states, 3)
+        self.fc2 = nn.Linear(3, 4)
+        self.fc3 = nn.Linear(4, n_actions)
         self.init_weights()
         self.device = device
         self.to(device)
@@ -90,7 +90,7 @@ class CriticNetwork(nn.Module):
     def forward(self, observation, actions):
         x = self.fc1(observation.float())
         x = F.relu(x)
-        x = self.fc2(torch.cat([x, actions.float()],1))
+        x = self.fc2(torch.cat([x, actions.float()], 1))
         x = F.relu(x)
         x = self.fc3(x)
         return x
