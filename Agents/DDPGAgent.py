@@ -69,12 +69,13 @@ class DDPGAGent(Agent):
         #self.actor_network.eval()  # To handle batch norm and drop out in the test case
         if type(state) is not torch.Tensor:
             state = torch.tensor(state).to(self.actor_network.device).float()
-        action = self.actor_network.forward(state)*2
+        action = self.actor_network.forward(state)
         if add_noise:
             if self.opts.noise_epsilon > 0:
                 action = action+torch.tensor(self.random_process.sample()).float().to(self.actor_network.device)
                 #noise = torch.randn(action.shape, dtype=torch.float32) * math.sqrt(self.opts.noise_var)
                 #action = action + noise.to(self.actor_network.device).float()
+
         # TODO: Action can be saturated here
         #action = action.clamp(self.opts.act_limit_lower, self.opts.act_limit_upper)
         return action
@@ -123,10 +124,10 @@ class DDPGAGent(Agent):
                     actor_out = self.actor_network(s_states)
                     actor_loss = -self.critic_network(s_states, actor_out)
                     actor_loss = actor_loss.mean()
-                    print(self.actor_network.fc3.weight.grad)
+                    #print(self.actor_network.fc3.weight.grad)
                     actor_loss.backward()
                     self.actor_optimizer.step()
-                    self.update_target_networks(0.1)
+                    #self.update_target_networks(0.1)
 
         return avg_rewards
 
