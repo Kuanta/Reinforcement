@@ -18,6 +18,7 @@ import numpy as np
 class DDPGAgentOptions:
     def __init__(self):
         self.exp_batch_size = 10
+        self.exp_buffer_size = 1000
         self.discount = 0.99
         self.actor_optimizer = optim.Adam
         self.critic_optimizer = optim.Adam
@@ -35,6 +36,7 @@ class DDPGAgentOptions:
 class DDPGAGent(Agent):
     def __init__(self, actor_network, critic_network, opts=DDPGAgentOptions()):
         super().__init__()
+        self.opts = opts
         self.actor_network = actor_network
         self.critic_network = critic_network
         self.target_actor_network = copy.deepcopy(actor_network)
@@ -48,12 +50,13 @@ class DDPGAGent(Agent):
         # Init target networks with the same parameters as the source networks
         polyak_update(self.target_actor_network, self.actor_network, 1)
         polyak_update(self.target_critic_network, self.critic_network, 1)
-        self.exp_buffer = ExperienceBuffer(100)
-        self.opts = opts
+        self.exp_buffer = ExperienceBuffer(self.opts.exp_buffer_size)
+
+        # Initialize optimizer
         self.actor_optimizer = self.opts.actor_optimizer(self.actor_network.parameters(), self.opts.actor_learning_rate)
         self.critic_optimizer = self.opts.critic_optimizer(self.critic_network.parameters(), self.opts.critic_learning_rate)
         self.random_process = OrnsteinUhlenbeckProcess(size=1, theta=0.15, mu=0.0, sigma=0.2)
-        # Initialize optimizer
+
 
     def act(self, state, add_noise=False):
         '''
@@ -80,7 +83,7 @@ class DDPGAGent(Agent):
         avg_rewards = []
         for i in range(n_episodes):
             n_update_iter = 0  # Number of update iterations done. Needed to check if target networks need update
-            curr_state = torch.tensor(environment.reset()).to(device=self.actor_network.device)
+            curr_state = torch.tensor(environment.reset()).to(device=self.actor_network.device).float()
             episode_rewards = []
             while True:
                 action = self.act(curr_state, add_noise=True).cpu().detach().numpy()
@@ -120,6 +123,7 @@ class DDPGAGent(Agent):
                     actor_out = self.actor_network(s_states)
                     actor_loss = -self.critic_network(s_states, actor_out)
                     actor_loss = actor_loss.mean()
+                    print(self.actor_network.fc3.weight.grad)
                     actor_loss.backward()
                     self.actor_optimizer.step()
                     self.update_target_networks(0.1)
