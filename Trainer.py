@@ -25,21 +25,19 @@ class Trainer:
 
     def train(self):
         if self.opts.episodic:
-            for _ in range(self.opts.n_epochs):
-                self.agent.learn(self.env, self.opts.n_episodes)
+            self.agent.learn(self.env, self.opts.n_episodes)
         else:
             # TODO: Implement continuous training
             pass
 
     def test(self):
         if self.opts.episodic:
-            for _ in range(self.opts.n_episodes):
-                curr_state = self.env.reset()
-                while True:
-                    action = self.agent.act(curr_state)
-                    obs, rew, done = self.env.step(action.cpu().detach().numpy())
-                    curr_state = obs
-                    self.env.render()
-                    if done:
-                        break
+            curr_state = self.env.reset()
+            while True:
+                action = self.agent.act(curr_state)
+                obs, rew, done = self.env.step(action.cpu().detach().numpy())
+                curr_state = obs
+                self.env.render()
+                if done:
+                    break
 

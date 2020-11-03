@@ -4,6 +4,12 @@ from Agents.Networks import ActorNetwork, CriticNetwork
 import Trainer as trn
 import matplotlib.pyplot as plt
 
+TRAIN = True
+RESUME_TRAINING = True
+TEST = True
+
+MODEL_PATH = "ratio_control_random"
+
 time = [i*0.1 for i in range(100)]
 env = RatioControlEnvironment(time)
 obs_size = 2
@@ -18,20 +24,29 @@ opts.noise_var = 0.1
 opts.target_update_delay = 10
 opts.noise_epsilon = 1  # When this is lower than 0, no noise will be applied
 opts.noise_depsilon = 1/50000  # At each iteration, substract this from noise epsilon
-opts.exp_batch_size = 500
+opts.exp_batch_size = 1000
 agent = DDPGAGent(actor_network=actor_network, critic_network=critic_network, opts=opts)
-agent.load_model("ratio_control")
+
 trnOpts = trn.TrainOpts()
 trnOpts.n_epochs = 1
-trnOpts.n_episodes = 500
+trnOpts.n_episodes = 100
 trainer = trn.Trainer(agent=agent, env=env, opts=trnOpts)
-#trainer.train()
-#agent.save_model("ratio_control")
-trainer.test()
-plt.figure(1)
-plt.plot(env.y1[0:-1])
-plt.plot(env.y2[0:-1])
-plt.show()
-plt.figure(2)
-plt.plot(env.r2)
-plt.show()
+
+if TRAIN:
+    if RESUME_TRAINING:
+        agent.load_model(MODEL_PATH)
+    trainer.train()
+    agent.save_model(MODEL_PATH)
+
+if TEST:
+    agent.load_model(MODEL_PATH)
+    trainer.test()
+    plt.figure(1)
+    plt.plot(time[0:-1], env.y1[0:-1], color='BLUE')
+    plt.plot(time[0:-1], env.y2[0:-1], color='RED')
+    plt.show()
+    plt.figure(2)
+    plt.plot(time[0:-1], env.r2[0:-1], color='RED')
+    plt.plot(time[0:-1], env.r1[0:-1], color='ORANGE')
+    plt.show()
+    print("Last Val Of R1:%f, R2:%f"%(env.r1[-2], env.r2[-2]))

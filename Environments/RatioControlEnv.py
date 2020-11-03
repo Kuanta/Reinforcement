@@ -17,6 +17,7 @@ class RatioControlEnvironment(Environment):
     def step(self, action):
         self.update_y2(action)
         reward = -np.power(np.array((self.y1[self.curr_t]-self.y2[self.curr_t])), 2)
+        reward -= np.power(np.array((self.r1[self.curr_t]-self.y2[self.curr_t])), 2)  # This may be obsolete because y1[t] = r1[t] at steady state
         self.curr_t = self.curr_t + 1
         done = False
         if self.curr_t+1 >= len(self.time):
@@ -32,6 +33,13 @@ class RatioControlEnvironment(Environment):
         self.r2 = np.zeros(len(self.time))
         self.y1 = np.zeros(len(self.time))
         self.y2 = np.zeros(len(self.time))
+
+        # Random Initial condition
+        random_start = np.random.rand()
+        self.y1[0] = random_start
+        self.r1[:] = self.y1[0] + 1  # Reference signal is step input, starting from the initial condition of y1
+        self.y2[0] = self.y1[0]
+        self.r2[0] = 0.5*(self.y1[0] + 1)
         self.curr_t = 1
         self.update_y1()
         init_obs = self.get_curr_observation()

@@ -18,7 +18,7 @@ import numpy as np
 class DDPGAgentOptions:
     def __init__(self):
         self.exp_batch_size = 10
-        self.exp_buffer_size = 1000
+        self.exp_buffer_size = 5000
         self.discount = 0.99
         self.actor_optimizer = optim.Adam
         self.critic_optimizer = optim.Adam
@@ -69,7 +69,7 @@ class DDPGAGent(Agent):
         #self.actor_network.eval()  # To handle batch norm and drop out in the test case
         if type(state) is not torch.Tensor:
             state = torch.tensor(state).to(self.actor_network.device).float()
-        action = self.actor_network.forward(state)
+        action = self.actor_network.forward(state)*2
         if add_noise:
             if self.opts.noise_epsilon > 0:
                 action = action+torch.tensor(self.random_process.sample()).float().to(self.actor_network.device)
@@ -96,9 +96,9 @@ class DDPGAGent(Agent):
                 self.opts.noise_epsilon = self.opts.noise_epsilon - self.opts.noise_depsilon
                 if done:
                     self.reset()
-                    mean_episode_reward = np.array(episode_rewards).sum()
-                    avg_rewards.append(mean_episode_reward)
-                    print("End of episode with total reward: {}".format(mean_episode_reward))
+                    total_episode_reward = np.array(episode_rewards).sum()
+                    avg_rewards.append(total_episode_reward)
+                    print("({}/{}) - End of episode with total reward: {}".format(i, n_episodes, total_episode_reward))
                     break
                 if self.exp_buffer.is_accumulated():  # Do the updates
                     # Sample experiences
