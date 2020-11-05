@@ -1,5 +1,5 @@
 class Environment:
-    def get_observation(self):
+    def step(self, action):
         raise NotImplementedError
 
     def render(self):

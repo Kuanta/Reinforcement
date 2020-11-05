@@ -31,6 +31,8 @@ class DDPGAgentOptions:
         self.target_update_delay = 100  # After this many updates in the source networks, update target networks also
         self.act_limit_upper = 2
         self.act_limit_lower = -2
+        self.action_scale = 1
+        self.action_bias = 0
 
 
 class DDPGAGent(Agent):
@@ -55,7 +57,7 @@ class DDPGAGent(Agent):
         # Initialize optimizer
         self.actor_optimizer = self.opts.actor_optimizer(self.actor_network.parameters(), self.opts.actor_learning_rate)
         self.critic_optimizer = self.opts.critic_optimizer(self.critic_network.parameters(), self.opts.critic_learning_rate)
-        self.random_process = OrnsteinUhlenbeckProcess(size=1, theta=0.15, mu=0.0, sigma=0.2)
+        self.random_process = OrnsteinUhlenbeckProcess(size=2, theta=0.15, mu=0.0, sigma=0.1)
 
 
     def act(self, state, add_noise=False):
@@ -66,15 +68,18 @@ class DDPGAGent(Agent):
         :param add_noise:
         :return:
         '''
-        #self.actor_network.eval()  # To handle batch norm and drop out in the test case
+
         if type(state) is not torch.Tensor:
             state = torch.tensor(state).to(self.actor_network.device).float()
-        action = self.actor_network.forward(state)*2
+
+        bias = torch.tensor(self.opts.action_bias).to(self.actor_network.device).float()
+        bias.requires_grad = False
+        action = self.actor_network.forward(state)*self.opts.action_scale + bias
         if add_noise:
             if self.opts.noise_epsilon > 0:
-                action = action+torch.tensor(self.random_process.sample()).float().to(self.actor_network.device)
-                #noise = torch.randn(action.shape, dtype=torch.float32) * math.sqrt(self.opts.noise_var)
-                #action = action + noise.to(self.actor_network.device).float()
+                #action = torch.add(action, torch.tensor(self.random_process.sample()).float().to(self.actor_network.device))
+                noise = torch.randn(action.shape, dtype=torch.float32) * math.sqrt(self.opts.noise_var)
+                action = action + noise.to(self.actor_network.device).float()
 
         # TODO: Action can be saturated here
         #action = action.clamp(self.opts.act_limit_lower, self.opts.act_limit_upper)
@@ -87,10 +92,12 @@ class DDPGAGent(Agent):
             curr_state = torch.tensor(environment.reset()).to(device=self.actor_network.device).float()
             episode_rewards = []
             while True:
+                n_update_iter += 1
                 action = self.act(curr_state, add_noise=True).cpu().detach().numpy()
                 next_state, reward, done = environment.step(action)
                 episode_rewards.append(reward)
-                self.exp_buffer.add_experience(curr_state, torch.tensor(action), torch.tensor(reward), torch.tensor(next_state), torch.tensor(done))
+                self.exp_buffer.add_experience(curr_state, torch.tensor(action).float(), torch.tensor(reward).float(),
+                                               torch.tensor(next_state).float(), torch.tensor(done))
                 curr_state = torch.tensor(next_state).float().to(self.actor_network.device)
                 curr_state.requires_grad = False
                 self.opts.noise_epsilon = self.opts.noise_epsilon - self.opts.noise_depsilon
@@ -98,7 +105,7 @@ class DDPGAGent(Agent):
                     self.reset()
                     total_episode_reward = np.array(episode_rewards).sum()
                     avg_rewards.append(total_episode_reward)
-                    print("({}/{}) - End of episode with total reward: {}".format(i, n_episodes, total_episode_reward))
+                    print("({}/{}) - End of episode with total reward: {} iteration: {}".format(i, n_episodes, total_episode_reward, n_update_iter))
                     break
                 if self.exp_buffer.is_accumulated():  # Do the updates
                     # Sample experiences
@@ -120,14 +127,13 @@ class DDPGAGent(Agent):
 
                     # Run Gradient Ascent on actor network
                     self.actor_optimizer.zero_grad()
-                    #self.actor_network.train()  # Enable train mode
-                    actor_out = self.actor_network(s_states)
-                    actor_loss = -self.critic_network(s_states, actor_out)
+                    self.actor_network.train()  # Enable train mode
+                    actor_out = self.act(s_states)
+                    actor_loss = -self.critic_network(s_states.detach(), actor_out)
                     actor_loss = actor_loss.mean()
-                    #print(self.actor_network.fc3.weight.grad)
                     actor_loss.backward()
                     self.actor_optimizer.step()
-                    #self.update_target_networks(0.1)
+                    self.update_target_networks(0.01)
 
         return avg_rewards
 
