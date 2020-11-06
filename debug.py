@@ -14,7 +14,9 @@ for i in range(2):
 
 import torch
 import math
+import numpy as np
 
 t = torch.Tensor([1,2])
 noise = torch.randn(t.shape, dtype=torch.float32)
-print(t + noise)
+uni = np.random.uniform(-9.8, 9.8, size=(10,1))
+print(uni)

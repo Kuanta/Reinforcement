@@ -8,7 +8,6 @@ class Environment:
     def reset(self):
         raise NotImplementedError
 
-
 class ContinuousDefinition:
     def __init__(self, shape, upper_limit=None, lower_limit=None):
         self.shape = shape

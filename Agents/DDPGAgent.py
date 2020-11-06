@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from Agents.Agent import Agent
-from Environments.Environment import Environment
+from Environments.Environment import Environment, ContinuousDefinition
 from Agents.ExperienceBuffer import ExperienceBuffer
 from Agents.RandomProcesses import OrnsteinUhlenbeckProcess
 from common import *
@@ -29,18 +29,23 @@ class DDPGAgentOptions:
         self.noise_depsilon = 1
         self.min_noise_var = 0.01  # If noise variance is smaller than this, no more noise will be added
         self.target_update_delay = 100  # After this many updates in the source networks, update target networks also
-        self.act_limit_upper = 2
-        self.act_limit_lower = -2
-        self.action_scale = 1
-        self.action_bias = 0
+        self.uniform_noise_steps = 0  # If the current iteration is bigger than this, action will be selected uniformly
 
 
 class DDPGAGent(Agent):
-    def __init__(self, actor_network, critic_network, opts=DDPGAgentOptions()):
+    def __init__(self, actor_network, critic_network, act_def: ContinuousDefinition, opts=DDPGAgentOptions()):
+        '''
+
+        :param actor_network (nn.Module): Actor network
+        :param critic_network (nn.Module): Critic network
+        :param act_def (ContinuousDefinition): Action space definition
+        :param opts:
+        '''
         super().__init__()
         self.opts = opts
         self.actor_network = actor_network
         self.critic_network = critic_network
+        self.act_def = act_def
         self.target_actor_network = copy.deepcopy(actor_network)
         self.target_critic_network = copy.deepcopy(critic_network)
         # Freeze target networks. They will never be updated with gradient descent/ascent
@@ -60,7 +65,7 @@ class DDPGAGent(Agent):
         self.random_process = OrnsteinUhlenbeckProcess(size=2, theta=0.15, mu=0.0, sigma=0.1)
 
 
-    def act(self, state, add_noise=False):
+    def act(self, state, add_noise=False, uniform_noise=False):
         '''
         Generates an action using the actor network. During the network, add some noise to ensure exploration.
         Addition of a noise is the off-policy nature of DDPG
@@ -68,21 +73,23 @@ class DDPGAGent(Agent):
         :param add_noise:
         :return:
         '''
+        if uniform_noise:
+            action = np.random.uniform(self.act_def.lower_limit, self.act_def.upper_limit, size=self.act_def.shape)
+            action = torch.tensor(action).float().to(self.actor_network.device)
+        else:
+            if type(state) is not torch.Tensor:
+                state = torch.tensor(state).to(self.actor_network.device).float()
+            bias = (self.act_def.upper_limit+self.act_def.lower_limit)/2
+            bias = torch.tensor(bias).to(self.actor_network.device).float()
+            bias.requires_grad = False
+            scale = (self.act_def.upper_limit-self.act_def.lower_limit)/2
+            action = self.actor_network.forward(state)*scale + bias
+            if add_noise:
+                if self.opts.noise_epsilon > 0:
+                    #action = torch.add(action, torch.tensor(self.random_process.sample()).float().to(self.actor_network.device))
+                    noise = torch.randn(action.shape, dtype=torch.float32) * math.sqrt(self.opts.noise_var)
+                    action = action + noise.to(self.actor_network.device).float()
 
-        if type(state) is not torch.Tensor:
-            state = torch.tensor(state).to(self.actor_network.device).float()
-
-        bias = torch.tensor(self.opts.action_bias).to(self.actor_network.device).float()
-        bias.requires_grad = False
-        action = self.actor_network.forward(state)*self.opts.action_scale + bias
-        if add_noise:
-            if self.opts.noise_epsilon > 0:
-                #action = torch.add(action, torch.tensor(self.random_process.sample()).float().to(self.actor_network.device))
-                noise = torch.randn(action.shape, dtype=torch.float32) * math.sqrt(self.opts.noise_var)
-                action = action + noise.to(self.actor_network.device).float()
-
-        # TODO: Action can be saturated here
-        #action = action.clamp(self.opts.act_limit_lower, self.opts.act_limit_upper)
         return action
 
     def learn(self, environment: Environment, n_episodes: int):
@@ -92,8 +99,11 @@ class DDPGAGent(Agent):
             curr_state = torch.tensor(environment.reset()).to(device=self.actor_network.device).float()
             episode_rewards = []
             while True:
-                n_update_iter += 1
-                action = self.act(curr_state, add_noise=True).cpu().detach().numpy()
+                uniform_noise = False
+                if n_update_iter < self.opts.uniform_noise_steps:
+                    # Select a random action for early exploration
+                    uniform_noise = True
+                action = self.act(curr_state, add_noise=True, uniform_noise=uniform_noise).cpu().detach().numpy()
                 next_state, reward, done = environment.step(action)
                 episode_rewards.append(reward)
                 self.exp_buffer.add_experience(curr_state, torch.tensor(action).float(), torch.tensor(reward).float(),
@@ -133,8 +143,9 @@ class DDPGAGent(Agent):
                     actor_loss = actor_loss.mean()
                     actor_loss.backward()
                     self.actor_optimizer.step()
+                    #print(self.actor_network.fc3.weight.grad.mean())
                     self.update_target_networks(0.01)
-
+                n_update_iter += 1  # One iteration is complete
         return avg_rewards
 
     def reset(self):
