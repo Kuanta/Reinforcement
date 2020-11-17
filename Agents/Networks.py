@@ -57,6 +57,7 @@ class ActorNetwork(nn.Module):
         self.init_weights()
         self.device = device
         self.to(device)
+        self.scaling_factor = nn.Parameter(torch.tensor(1).float().to(device))  # Learnable scale factor
 
     def init_weights(self, init_w=3e-3):
         self.fc1.weight.data = fanin_init(self.fc1.weight.data.size())
@@ -70,6 +71,7 @@ class ActorNetwork(nn.Module):
         x = F.relu(x)
         x = self.fc3(x)
         x = torch.tanh(x)
+        x = x * self.scaling_factor
         return x
 
 class CriticNetwork(nn.Module):

@@ -1,6 +1,6 @@
 from Agents.DDPGAgent import DDPGAGent, DDPGAgentOptions
 from Environments.Environment import ContinuousDefinition
-from Environments.FilterEnv import FilterEnv
+from Environments.FilterEnv import FilterEnv, FilterEnvOptions, FilterArchitecture
 from Agents.Networks import ActorNetwork, CriticNetwork
 import Trainer as trn
 import matplotlib.pyplot as plt
@@ -9,38 +9,46 @@ import numpy as np
 
 # Training Parameters
 
-TRAIN = False
+TRAIN = True
 RESUME_TRAINING = False
 TEST = True
-
-MODEL_PATH = "models/rl/fitering_varying"
-
+ARCHITECTURE = FilterArchitecture.PARALLEL
 SYSTEM = 0
+
+MODEL_PATH = "models/rl/fitering"
+
+if ARCHITECTURE == FilterArchitecture.SERIES:
+    MODEL_PATH = MODEL_PATH+"_serie"
+else:
+    MODEL_PATH = "models/rl/fitering"+"_parallel"
 
 if SYSTEM == 0:
     # Load data
+    MODEL_PATH = MODEL_PATH + "_0"
     system_data = pd.read_csv("data/first_order.csv", header=None).values
     inputs = system_data[:, 1]
     outputs = system_data[:, 2]
-    ramp = np.linspace(start=-9.98, stop=9.98, num=500)
 
 elif SYSTEM == 1:
+    MODEL_PATH = MODEL_PATH + "_1"
     # A First Order System (1/(s+1))
     inputs = np.ones(500)
     outputs = np.zeros(500)
 
-    for i in range(2, 500):
-        outputs[i] = outputs[i-1]*0.9048 + inputs[i]*0.09516
+    for i in range(1, 500):
+        outputs[i] = outputs[i-1]*0.9048 + inputs[i-1]*0.09516
 
-
-env = FilterEnv(ramp, outputs)
-env.reward_weight = 0.001
-obs_size = 1
+env_opts = FilterEnvOptions()
+env_opts.architecture = ARCHITECTURE
+env = FilterEnv(inputs, outputs, env_opts)
+env.act_punish_rate = 1
+obs_size = env.obs_dim
 act_size = 1
 actor_network = ActorNetwork(n_states=obs_size, n_actions=act_size, device="cuda:0")
 critic_network = CriticNetwork(n_states=obs_size, n_actions=act_size, device="cuda:0")
 
-act_def = ContinuousDefinition(lower_limit=-9.8, upper_limit=9.8, shape=1)
+# If a learnable scaling factor can be implemented, cont. def. won't be required
+act_def = ContinuousDefinition(lower_limit=-10, upper_limit=10, shape=1)  # TODO: Dynamically adjust the action space limits
 opts = DDPGAgentOptions()
 opts.discount = 0.99
 opts.critic_learning_rate = 0.0005
@@ -57,7 +65,7 @@ agent = DDPGAGent(actor_network=actor_network, critic_network=critic_network, ac
 
 trnOpts = trn.TrainOpts()
 trnOpts.n_epochs = 1
-trnOpts.n_episodes = 100
+trnOpts.n_episodes = 200
 trainer = trn.Trainer(agent=agent, env=env, opts=trnOpts)
 
 
@@ -70,17 +78,17 @@ if TRAIN:
 if TEST:
     agent.load_model(MODEL_PATH)
     trainer.test()
+    mse = np.power(env.preds - env.outputs, 2).mean()
+    print("MSE:%f" % (mse))
     plt.figure()
     plt.plot(env.preds, color="RED")
     plt.plot(env.outputs, color="BLUE")
-    plt.title("RL Results")
+    plt.title("RL Results - MSE:{}".format(mse))
     plt.show()
     plt.figure()
     plt.plot(env.actions, color="ORANGE")
-    plt.plot(ramp, color="GREEN")
+    plt.plot(inputs, color="GREEN")
     plt.title("RL Actions")
     plt.show()
-    mse = np.power(env.preds - env.outputs, 2).mean()
-    print(env.inputs)
-    print("MSE:%f" % (mse))
+
 

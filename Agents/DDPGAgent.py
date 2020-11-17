@@ -83,7 +83,8 @@ class DDPGAGent(Agent):
             bias = torch.tensor(bias).to(self.actor_network.device).float()
             bias.requires_grad = False
             scale = (self.act_def.upper_limit-self.act_def.lower_limit)/2
-            action = self.actor_network.forward(state)*scale + bias
+            #action = self.actor_network.forward(state)*scale + bias
+            action = self.actor_network.forward(state)
             if add_noise:
                 if self.opts.noise_epsilon > 0:
                     #action = torch.add(action, torch.tensor(self.random_process.sample()).float().to(self.actor_network.device))

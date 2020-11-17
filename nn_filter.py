@@ -2,20 +2,66 @@ from DeepTorch import Trainer as trn
 from DeepTorch.Datasets.NumericalDataset import NumericalDataset
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from scipy.io import loadmat
 import numpy as np
 import matplotlib.pyplot as plt
 
+TRAIN = True
+TEST = True
+NON_LINEAR = False
+MODEL_NAME = "./models/nn_filter"
+if NON_LINEAR:
+    DATASET = "./data/nl_dataset.mat"
+    MODEL_NAME = MODEL_NAME + "_nl"
+else:
+    DATASET = "./data/dataset.mat"
+
 class FilterNetwork(nn.Module):
     def __init__(self):
         super(FilterNetwork, self).__init__()
-        self.fc1 = nn.Linear(7, 1)
+        self.fc1 = nn.Linear(7, 16)
+        self.fc2 = nn.Linear(16, 8)
+        self.fc3 = nn.Linear(8, 1)
+        n_inputs = 7
+        n_hidden = 3
+        n_layers = 1
+        self.lstm = nn.LSTM(n_inputs, n_hidden, n_layers)
 
     def forward(self, x):
-        return self.fc1(x)
+        x = self.fc1(x)
+        x = torch.tanh(x)
+        x = self.fc2(x)
+        x = torch.tanh(x)
+        x = self.fc3(x)
+        return x
+
+
+class LinearFilterNetwork(nn.Module):
+    def __init__(self):
+        super(LinearFilterNetwork, self).__init__()
+        self.hidden_states = 14
+        self.fc1(7, self.hidden_states)
+        self.hs = (torch.zeros(1, 1, self.hidden_states).to("cuda:0").float(),
+                   torch.zeros(1, 1, self.hidden_states).to("cuda:0").float())
+        self.lstm = nn.LSTM(7, self.hidden_states)
+        self.fc2 = nn.Linear(self.hidden_states, 1)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x, hs = self.lstm(x.unsqueeze(dim=1), self.hs)
+        self.hs = (hs[0].detach(), hs[1].detach())
+        x = x.reshape(-1, self.hidden_states)
+        x = self.fc2(x)
+        return x
+
+    def reset(self):
+        # Reset the states
+        self.hs = (torch.zeros(1, 1, self.hidden_states).to("cuda:0").float(),
+                   torch.zeros(1, 1, self.hidden_states).to("cuda:0").float())
 
 # Load data
-dataset = loadmat("dataset.mat")
+dataset = loadmat(DATASET)
 train = dataset["tr_out"][0][0]
 val = dataset["val_out"][0][0]
 test = dataset["test_out"][0][0]
@@ -36,85 +82,128 @@ train_dataset = NumericalDataset(tr_reg, tr_labels)
 validation_dataset = NumericalDataset(val_reg, val_labels)
 
 # Load network
-net = FilterNetwork()
+if NON_LINEAR:
+    net = FilterNetwork()
+else:
+    net = LinearFilterNetwork()
 
-net.load_state_dict(torch.load("filter_network"))
 net.to("cuda:0")
-trn_opts = trn.TrainingOptions()
-trn_opts.batch_size = 1000
-trn_opts.learning_rate = 0.01
-trn_opts.n_epochs = 400
-trn_opts.l2_reg_constant = 0.0001
-trn_opts.saved_model_name = "filter_network"
-trn_opts.save_model = True
-trainer = trn.Trainer(net, trn_opts)
-#trainer.train(torch.nn.MSELoss(), train_dataset, validation_set=validation_dataset)
-print("Done")
 
-# Regular Test
-test_preds = net.forward(torch.tensor(test_reg).to("cuda:0").float()).detach().cpu().numpy()
-plt.figure()
-plt.plot(np.array(test["y1"]))
-plt.legend("Y1")
-plt.plot(np.array(test_preds))
-plt.legend("Prediction")
-plt.title("Regular Test")
-plt.show()
+if TRAIN:
+    trn_opts = trn.TrainingOptions()
+    if NON_LINEAR:
+        trn_opts.batch_size = 5000
+        trn_opts.learning_rate = 0.01
+        trn_opts.learning_rate_drop_type = trn.SchedulerType.StepLr
+        trn_opts.learning_rate_drop_factor = 0.99
+        trn_opts.learning_rate_drop_step_count = 100
+        trn_opts.n_epochs = 5000
+        trn_opts.l2_reg_constant = 1E-2
+        trn_opts.saved_model_name = MODEL_NAME
+        trn_opts.save_model = True
+        trn_opts.optimizer_type = trn.OptimizerType.Adam
+        trn_opts.verbose_freq = 500
+    else:
+
+        #These optiosn work best for linear case
+        trn_opts.batch_size = 1000
+        trn_opts.learning_rate = 0.001
+        trn_opts.n_epochs = 100
+        trn_opts.l2_reg_constant = 0.000001
+        trn_opts.saved_model_name = MODEL_NAME
+        trn_opts.save_model = True
+        trn_opts.shuffle_data = False
+        trn_opts.optimizer_type = trn.OptimizerType.Adam
+        trn_opts.epoch_reset_callback = net.reset
+
+
+    trainer = trn.Trainer(net, trn_opts)
+    trainer.train(torch.nn.MSELoss(), train_dataset, validation_set=validation_dataset)
+    print("Done")
+
+if TEST:
+    net.load_state_dict(torch.load(MODEL_NAME))
+    # Regular Test
+    test_preds = net.forward(torch.tensor(test_reg).to("cuda:0").float()).detach().cpu().numpy()
+    mse = np.mean(np.square(np.array(test["y1"]) - np.array(test_preds)))
+    plt.figure()
+    plt.plot(np.array(test["y1"]))
+    plt.legend("Y1")
+    plt.plot(np.array(test_preds))
+    plt.legend("Prediction")
+    plt.title("Regular Test - MSE:{}".format(mse))
+    plt.show()
 
 
 
-# In place Test 1
-'''
-In this test, y2 inputs are fed into F(s) and the results are compared with y1
-'''
-test_inputs = np.transpose([test["y2"], test["y2_1"], test["y2_2"], test["y2_3"]]).squeeze(0)
-past_preds = [0, 0, 0]
-preds = []
-for i in range(len(test["tout"])):
-    curr_input = np.concatenate((test_inputs[i,:], np.array(past_preds)), axis=0)
-    pred = net.forward(torch.tensor(curr_input).to("cuda:0").float()).item()
-    preds.append(pred)
-    past_preds.insert(0, pred)
-    past_preds.pop(-1)
+    # In place Test 1
+    '''
+    In this test, y2 inputs are fed into F(s) and the results are compared with y1
+    '''
+    net.reset()
+    test_inputs = np.transpose([test["y2"], test["y2_1"], test["y2_2"], test["y2_3"]]).squeeze(0)
+    past_preds = [0, 0, 0]
+    preds = []
+    for i in range(len(test["tout"])):
+        curr_input = np.expand_dims(np.concatenate((test_inputs[i,:], np.array(past_preds)), axis=0), axis=0)
+        pred = net.forward(torch.tensor(curr_input).to("cuda:0").float()).item()
+        preds.append(pred)
+        past_preds.insert(0, pred)
+        past_preds.pop(-1)
 
-plt.figure()
-plt.plot(np.array(test["y1"]))
-plt.legend("Y1")
-plt.plot(np.array(preds))
-plt.legend("Prediction")
-plt.show()
+    mse = np.mean(np.square(np.array(test["y1"]) - np.array(preds)))
+    plt.figure()
+    plt.plot(np.array(test["y1"]))
+    plt.legend("Y1")
+    plt.plot(np.array(preds))
+    plt.legend("Prediction")
+    plt.plot(np.array(test["y2"]))
+    plt.legend("Y2")
+    plt.title("In place test 1 - MSE:{}".format(mse))
+    plt.show()
 
-# In place Test 2
-'''
-In this test, a step input is fed into the F(s)*T2(s) system and the results are compared to T1(s)
-'''
-diff_eq_coeffs = [0,    0.1113,   -0.1775,    0.0671,    2.7563,   -2.5360,    0.7788];
-test_inputs = np.transpose([test["u"], test["u_1"], test["u_2"], test["u_3"]]).squeeze(0)
-past_preds = [0, 0, 0]
-past_y2 = [0, 0, 0]
-control_signals = []
-preds = []
-for i in range(len(test["tout"])):
-    # F(s)
-    curr_input = np.concatenate((test_inputs[i,:], np.array(past_preds)), axis=0)
-    pred = net.forward(torch.tensor(curr_input).to("cuda:0").float()).item()
-    control_signals.append(pred)
-    past_preds.insert(0, pred)
-    past_preds.pop(-1),
+    # In place Test 2
+    '''
+    In this test, a step input is fed into the F(s)*T2(s) system and the results are compared to T1(s)
+    '''
+    diff_eq_coeffs = [0,   0.0828,   -0.0750,    1.5987,   -0.6065];
+    test_inputs = np.transpose([test["u"], test["u_1"], test["u_2"], test["u_3"]]).squeeze(0)
+    past_r2s = [0, 0, 0]
+    past_y2 = [0, 0]
+    control_signals = []
+    preds = []
+    for i in range(len(test["tout"])):
+        # F(s)
+        curr_input = np.expand_dims(np.concatenate((test_inputs[i,:], np.array(past_r2s)), axis=0),axis=0)
+        r2 = net.forward(torch.tensor(curr_input).to("cuda:0").float()).item()
+        control_signals.append(r2)
+        past_r2s.insert(0, r2)
+        past_r2s.pop(-1),
 
-    # T2(s)
-    curr_r2 = np.array([pred, past_preds[0], past_preds[1], past_preds[2]])
-    curr_r2 = np.concatenate((curr_r2, np.array(past_y2)), axis=0)
-    _y2 = np.dot(curr_r2, diff_eq_coeffs)
-    past_y2.insert(0, _y2)
-    past_y2.pop(-1)
-    preds.append(_y2)
-plt.figure()
-plt.plot(np.array(test["y1"]))
-plt.legend("Y1")
-plt.plot(np.array(preds))
-plt.legend("Prediction")
-plt.title("In Place Test 2")
-plt.show()
+        # T2(s)
+        curr_r2 = np.array([r2, past_r2s[0], past_r2s[1]])
+        curr_r2 = np.concatenate((curr_r2, np.array(past_y2)), axis=0)
+        if NON_LINEAR:
+            curr_r2 = np.sin(curr_r2)
+        _y2 = np.dot(curr_r2, diff_eq_coeffs)
+        past_y2.insert(0, _y2)
+        past_y2.pop(-1)
+        preds.append(_y2)
+
+    mse = np.mean(np.square(np.array(test["y1"]) - np.array(preds)))
+    plt.figure()
+    plt.plot(np.array(test["y1"]))
+    plt.legend("Y1")
+    plt.plot(np.array(preds))
+    plt.legend("Prediction")
+    plt.plot(np.array(test["y2"]))
+    plt.legend("Y2")
+    plt.title("In Place Test 2 - MSE:{}".format(mse))
+    plt.show()
+
+    plt.figure()
+    plt.plot(np.array(control_signals))
+    plt.title("Control Signal in In Place Test 2")
+    plt.show()
 
 
