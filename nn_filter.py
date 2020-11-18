@@ -2,7 +2,6 @@ from DeepTorch import Trainer as trn
 from DeepTorch.Datasets.NumericalDataset import NumericalDataset
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from scipy.io import loadmat
 import numpy as np
 import matplotlib.pyplot as plt
@@ -40,15 +39,13 @@ class FilterNetwork(nn.Module):
 class LinearFilterNetwork(nn.Module):
     def __init__(self):
         super(LinearFilterNetwork, self).__init__()
-        self.hidden_states = 14
-        self.fc1(7, self.hidden_states)
+        self.hidden_states = 7
         self.hs = (torch.zeros(1, 1, self.hidden_states).to("cuda:0").float(),
                    torch.zeros(1, 1, self.hidden_states).to("cuda:0").float())
         self.lstm = nn.LSTM(7, self.hidden_states)
         self.fc2 = nn.Linear(self.hidden_states, 1)
 
     def forward(self, x):
-        x = self.fc1(x)
         x, hs = self.lstm(x.unsqueeze(dim=1), self.hs)
         self.hs = (hs[0].detach(), hs[1].detach())
         x = x.reshape(-1, self.hidden_states)
@@ -78,8 +75,8 @@ test_reg = np.array([test["y2"], test["y2_1"], test["y2_2"], test["y2_3"], test[
 test_reg = np.transpose(test_reg).squeeze(0)
 test_labels = np.array(test["y1"])
 
-train_dataset = NumericalDataset(tr_reg, tr_labels)
-validation_dataset = NumericalDataset(val_reg, val_labels)
+train_dataset = NumericalDataset(tr_reg, tr_labels, sequential=True)
+validation_dataset = NumericalDataset(val_reg, val_labels, sequential=True)
 
 # Load network
 if NON_LINEAR:
@@ -106,9 +103,12 @@ if TRAIN:
     else:
 
         #These optiosn work best for linear case
-        trn_opts.batch_size = 1000
-        trn_opts.learning_rate = 0.001
-        trn_opts.n_epochs = 100
+        trn_opts.batch_size = 5000
+        trn_opts.learning_rate = 0.01
+        trn_opts.learning_rate_drop_type = trn.SchedulerType.StepLr
+        trn_opts.learning_rate_drop_factor = 0.9
+        trn_opts.learning_rate_drop_step_count = 500
+        trn_opts.n_epochs = 1
         trn_opts.l2_reg_constant = 0.000001
         trn_opts.saved_model_name = MODEL_NAME
         trn_opts.save_model = True
@@ -166,6 +166,7 @@ if TEST:
     '''
     In this test, a step input is fed into the F(s)*T2(s) system and the results are compared to T1(s)
     '''
+    net.reset()
     diff_eq_coeffs = [0,   0.0828,   -0.0750,    1.5987,   -0.6065];
     test_inputs = np.transpose([test["u"], test["u_1"], test["u_2"], test["u_3"]]).squeeze(0)
     past_r2s = [0, 0, 0]
@@ -205,5 +206,3 @@ if TEST:
     plt.plot(np.array(control_signals))
     plt.title("Control Signal in In Place Test 2")
     plt.show()
-
-
