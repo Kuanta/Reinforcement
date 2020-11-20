@@ -40,20 +40,20 @@ class FilterNetwork(nn.Module):
 class LinearFilterNetwork(nn.Module):
     def __init__(self, n_points):
         super(LinearFilterNetwork, self).__init__()
-        self.hidden_states = 3
+        self.hidden_states = 100
         self.hs = (torch.zeros(1, 1, self.hidden_states).to("cuda:0").float(),
                    torch.zeros(1, 1, self.hidden_states).to("cuda:0").float())
         self.lstm = nn.LSTM(7, self.hidden_states)
-        self.fc2 = nn.Linear(self.hidden_states, 1)
+        self.fc2 = nn.Linear(self.hidden_states, 7)
         self.fc3 = nn.Linear(7, 1)
         self.n_points = n_points
 
     def forward(self, x):
         x, hs = self.lstm(x, self.hs)
         self.hs = (hs[0].detach(), hs[1].detach())
-        #x = x.reshape(-1, self.hidden_states)
         x = self.fc2(x)
-
+        x = torch.sigmoid(x)
+        x = self.fc3(x)
         return x
 
     def reset(self):
@@ -79,7 +79,7 @@ test_reg = np.array([test["y2"], test["y2_1"], test["y2_2"], test["y2_3"], test[
 test_reg = np.transpose(test_reg).squeeze(0)
 test_labels = np.array(test["y1"])
 
-train_dataset = SequentialDataset(tr_reg, tr_labels, n_points=100)
+train_dataset = SequentialDataset(tr_reg, tr_labels, n_points=500, batch_size=1000)
 
 validation_dataset = SequentialDataset(val_reg, val_labels, n_points=1)
 test_dataset = SequentialDataset(test_reg, test_labels)
@@ -91,7 +91,7 @@ validation_dataset = None
 if NON_LINEAR:
     net = FilterNetwork()
 else:
-    net = LinearFilterNetwork(n_points=100)
+    net = LinearFilterNetwork(n_points=500)
 
 net.to("cuda:0")
 net.reset()
@@ -113,19 +113,19 @@ if TRAIN:
     else:
 
         #These optiosn work best for linear case
-        trn_opts.batch_size = 10000
-        trn_opts.learning_rate = 0.005
+        trn_opts.batch_size = 1000
+        trn_opts.learning_rate = 0.001
         trn_opts.learning_rate_drop_type = trn.SchedulerType.StepLr
-        trn_opts.learning_rate_drop_factor = 0.999
+        trn_opts.learning_rate_drop_factor = 0.99
         trn_opts.learning_rate_drop_step_count = 500
-        trn_opts.n_epochs = 1
-        trn_opts.l2_reg_constant = 0
+        trn_opts.n_epochs = 50
         trn_opts.saved_model_name = MODEL_NAME
         trn_opts.save_model = True
-        trn_opts.shuffle_data = False
+        trn_opts.shuffle_data = True
         trn_opts.optimizer_type = trn.OptimizerType.Adam
         trn_opts.epoch_reset_callback = net.reset
         trn_opts.checkpoint_frequency = 500
+        trn_opts.regularization_hyperparams = [0.0000001]
 
     trainer = trn.Trainer(net, trn_opts)
     if RESUME_TRAINING:
