@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 TRAIN = True
 RESUME_TRAINING = False
-TEST = True
+TEST = False
 NON_LINEAR = False
 MODEL_NAME = "./models/nn/nn_filter"
 if NON_LINEAR:
@@ -40,19 +40,17 @@ class FilterNetwork(nn.Module):
 class LinearFilterNetwork(nn.Module):
     def __init__(self, n_points):
         super(LinearFilterNetwork, self).__init__()
-        self.hidden_states = 3
+        self.hidden_states = 100
         self.hs = (torch.zeros(1, 1, self.hidden_states).to("cuda:0").float(),
                    torch.zeros(1, 1, self.hidden_states).to("cuda:0").float())
-        self.lstm = nn.LSTM(7, self.hidden_states)
-        self.fc2 = nn.Linear(self.hidden_states, 1)
-        self.fc3 = nn.Linear(7, 1)
+        self.lstm = nn.LSTM(1, self.hidden_states)
+        self.C = nn.Linear(self.hidden_states, 1)
         self.n_points = n_points
 
     def forward(self, x):
         x, hs = self.lstm(x, self.hs)
         self.hs = (hs[0].detach(), hs[1].detach())
-        #x = x.reshape(-1, self.hidden_states)
-        x = self.fc2(x)
+        x = self.C(x)
 
         return x
 
@@ -67,19 +65,19 @@ train = dataset["tr_out"][0][0]
 val = dataset["val_out"][0][0]
 test = dataset["test_out"][0][0]
 
-tr_reg = np.array([train["y2"], train["y2_1"], train["y2_2"], train["y2_3"], train["y1_1"], train["y1_2"], train["y1_3"]])
+tr_reg = np.array([train["y2"]])
 tr_reg = np.transpose(tr_reg).squeeze(0)
 tr_labels = np.array(train["y1"])
 
-val_reg = np.array([val["y2"], val["y2_1"], val["y2_2"], val["y2_3"], val["y1_1"], val["y1_2"], val["y1_3"]])
+val_reg = np.array([val["y2"], val["y2_1"], val["y2_2"], val["y2_3"]])
 val_reg = np.transpose(val_reg).squeeze(0)
 val_labels = np.array(val["y1"])
 
-test_reg = np.array([test["y2"], test["y2_1"], test["y2_2"], test["y2_3"], test["y1_1"], test["y1_2"], test["y1_3"]])
+test_reg = np.array([test["y2"]])
 test_reg = np.transpose(test_reg).squeeze(0)
 test_labels = np.array(test["y1"])
 
-train_dataset = SequentialDataset(tr_reg, tr_labels, n_points=100)
+train_dataset = SequentialDataset(tr_reg, tr_labels, n_points=5000, batch_size=1)
 
 validation_dataset = SequentialDataset(val_reg, val_labels, n_points=1)
 test_dataset = SequentialDataset(test_reg, test_labels)
@@ -91,7 +89,7 @@ validation_dataset = None
 if NON_LINEAR:
     net = FilterNetwork()
 else:
-    net = LinearFilterNetwork(n_points=100)
+    net = LinearFilterNetwork(n_points=5000)
 
 net.to("cuda:0")
 net.reset()
@@ -100,9 +98,9 @@ if TRAIN:
     trn_opts = trn.TrainingOptions()
     if NON_LINEAR:
         trn_opts.batch_size = 5000
-        trn_opts.learning_rate = 0.01
+        trn_opts.learning_rate = 0.001
         trn_opts.learning_rate_drop_type = trn.SchedulerType.StepLr
-        trn_opts.learning_rate_drop_factor = 0.99
+        trn_opts.learning_rate_drop_factor = 0.9
         trn_opts.learning_rate_drop_step_count = 100
         trn_opts.n_epochs = 5000
         trn_opts.l2_reg_constant = 1E-2
@@ -113,10 +111,10 @@ if TRAIN:
     else:
 
         #These optiosn work best for linear case
-        trn_opts.batch_size = 10000
-        trn_opts.learning_rate = 0.005
+        trn_opts.batch_size = 1
+        trn_opts.learning_rate = 0.001
         trn_opts.learning_rate_drop_type = trn.SchedulerType.StepLr
-        trn_opts.learning_rate_drop_factor = 0.999
+        trn_opts.learning_rate_drop_factor = 0.9
         trn_opts.learning_rate_drop_step_count = 500
         trn_opts.n_epochs = 1
         trn_opts.l2_reg_constant = 0
@@ -131,7 +129,6 @@ if TRAIN:
     if RESUME_TRAINING:
         net.load_state_dict(torch.load(MODEL_NAME))
     trainer.train(torch.nn.MSELoss(), train_dataset, validation_set=validation_dataset)
-    print("Done")
 
 if TEST:
     net.load_state_dict(torch.load(MODEL_NAME))
@@ -157,15 +154,15 @@ if TEST:
     In this test, y2 inputs are fed into F(s) and the results are compared with y1
     '''
     net.reset()  # Reset states
-    test_inputs = np.transpose([test["y2"], test["y2_1"], test["y2_2"], test["y2_3"]]).squeeze(0)
+    test_inputs = np.transpose([test["y2"]]).squeeze(0)
     past_preds = [0, 0, 0]
     preds = []
     for i in range(len(test["tout"])):
         # Input must be of rank 3
-        curr_input = np.expand_dims(np.concatenate((test_inputs[i,:], np.array(past_preds)), axis=0), axis=0)
-        curr_input = np.expand_dims(curr_input, axis=0)
+        #curr_input = np.expand_dims(np.concatenate((test_inputs[i,:], np.array(past_preds)), axis=0), axis=0)
+        curr_input = np.expand_dims(test_inputs[i,:], axis=0)
         curr_input = torch.tensor(curr_input).to("cuda:0").float()
-        pred = net.forward(curr_input).item()
+        pred = net.forward(curr_input.unsqueeze(0)).item()
         preds.append(pred)
         past_preds.insert(0, pred)
         past_preds.pop(-1)
