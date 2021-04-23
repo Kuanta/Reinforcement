@@ -1,8 +1,10 @@
 from Agents.DDPGAgent import DDPGAGent, DDPGAgentOptions
 from Environments.GymEnvironment import GymEnvironment
+from Environments.Environment import ContinuousDefinition
 from Agents.Networks import ActorNetwork, CriticNetwork
 import Trainer as trn
 import gym
+
 
 env = GymEnvironment(gym.make('LunarLanderContinuous-v2'))
 obs_size = env.gym_env.observation_space.shape[0]
@@ -21,8 +23,10 @@ opts.noise_epsilon = 1  # When this is lower than 0, no noise will be applied
 opts.noise_depsilon = 1/100000  # At each iteration, substract this from noise epsilon
 opts.exp_batch_size = 64
 opts.exp_buffer_size = 10000
-agent = DDPGAGent(actor_network=actor_network, critic_network=critic_network, opts=opts)
-agent.load_model("lunar_agent")
+
+action_def = ContinuousDefinition(env.gym_env.action_space.shape, env.gym_env.action_space.high, env.gym_env.action_space.low)
+agent = DDPGAGent(actor_network=actor_network, critic_network=critic_network, act_def=action_def, opts=opts)
+#agent.load_model("lunar_agent")
 trnOpts = trn.TrainOpts()
 trnOpts.n_epochs = 1
 trnOpts.n_episodes = 250
