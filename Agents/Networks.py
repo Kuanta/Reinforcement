@@ -20,6 +20,27 @@ class ReinforceNetwork(nn.Module):
         return F.softmax(self.net(x), dim=1)
 
 
+class DQNetwork(nn.Module):
+    def __init__(self, n_actions, n_channels):
+        super(DQNetwork, self).__init__()
+        self.convs = nn.Sequential(
+            nn.Conv2d(n_channels, 32, kernel_size=8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 32, kernel_size=3, stride=2),
+            nn.ReLU(),
+            )
+        self.fc1 = nn.Linear(2816, 512)
+        self.fc2 = nn.Linear(512, n_actions)
+    
+    def forward(self, x):
+        x = self.convs(x)
+        x = self.fc1(x.view(x.shape[0], -1))
+        x = nn.functional.relu(x)
+        x = self.fc2(x)
+        return x
+        
 class ActorCriticNetwork(nn.Module):
     def __init__(self, obs_size, n_actions):
         super(ActorCriticNetwork, self).__init__()
@@ -31,6 +52,7 @@ class ActorCriticNetwork(nn.Module):
         self.critic_path = nn.Linear(128, 1)
 
     def forward(self, x):
+
         x = self.common(x)
         actor = F.softmax(self.actor_path(x))
         critic = self.critic_path(x)

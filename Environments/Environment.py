@@ -24,5 +24,11 @@ class DiscreteDefinition:
         self.continuous = False
         self.samples = samples
 
+    def get_action(self, index):
+        return self.samples[index]
+
+    def __getitem__(self, key):
+        return self.get_action(key)
+
     def __len__(self):
         return len(self.samples)
