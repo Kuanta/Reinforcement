@@ -59,7 +59,7 @@ class DQAgent(Agent):
                 action = np.argmax(self.network(torch.tensor(new_state).float().to(device).unsqueeze(0)).detach().cpu().numpy())
         return action
         
-    def act_greedy(self, new_state, device="cpu"):
+    def act_greedy(self, new_state):
         with torch.no_grad():
             net_out = self.network(new_state.unsqueeze(0))
             action = np.argmax(net_out.detach().cpu().numpy())
@@ -69,7 +69,6 @@ class DQAgent(Agent):
         device = "cpu"
         if self.opts.use_gpu and torch.cuda.is_available():
             device = "cuda:0"
-        print(device)
         self.network.to(device)
         self.target_network.to(device)
         self.reset()

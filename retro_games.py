@@ -31,15 +31,16 @@ options.loss = torch.nn.functional.smooth_l1_loss
 options.use_exp_stack = True
 options.exp_stack_size = 4
 options.use_gpu = True
-options.target_update_freq = 1000
-options.epsilon_decay = 200 
-options.skip_frames = 0
+options.target_update_freq = 500
+options.epsilon_decay = 100
+options.max_epsilon = 1
 options.min_epsilon = 0.01
 options.render = False
 agent = DQAgent(network, DiscreteDefinition(action_samples), opts=options)
 
 if TRAIN:
-    agent.learn(env, 50, 50000)
+    agent.load_model("space_invaders_2")
+    agent.learn(env, 20, 50000)
     agent.save_model("space_invaders_2")
 
 if TEST:
