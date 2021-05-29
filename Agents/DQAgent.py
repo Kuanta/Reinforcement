@@ -15,7 +15,7 @@ import random
 import copy
 
 
-class DQAgentOpts(Agent):
+class DQAgentOpts:
     def __init__(self):
         self.exp_batch_size = 64
         self.exp_buffer_size = 10000

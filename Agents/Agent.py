@@ -10,7 +10,7 @@ Action = typing.NewType("Action", np.ndarray)
 class Agent:
     def __init__(self):
         self.current_state = None
-
+    
     def act(self, new_state) -> Action:
         '''
         Call this method to create a new action with a new state
