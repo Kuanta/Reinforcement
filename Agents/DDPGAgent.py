@@ -93,7 +93,7 @@ class DDPGAGent(Agent):
 
         return action
 
-    def learn(self, environment: Environment, n_episodes: int):
+    def learn(self, environment: Environment, n_episodes: int, n_iterations: int):
         avg_rewards = []
         for i in range(n_episodes):
             n_update_iter = 0  # Number of update iterations done. Needed to check if target networks need update
@@ -105,7 +105,7 @@ class DDPGAGent(Agent):
                     # Select a random action for early exploration
                     uniform_noise = True
                 action = self.act(curr_state, add_noise=True, uniform_noise=uniform_noise).cpu().detach().numpy()
-                next_state, reward, done = environment.step(action)
+                next_state, reward, done, _ = environment.step(action)
                 episode_rewards.append(reward)
                 self.exp_buffer.add_experience(curr_state, torch.tensor(action).float(), torch.tensor(reward).float(),
                                                torch.tensor(next_state).float(), torch.tensor(done))
