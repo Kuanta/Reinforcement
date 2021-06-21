@@ -14,7 +14,6 @@ obs = env.reset()
 #Agents
 acNetwork = ActorCriticNetwork(4, 2)
 acAgent = ActorCriticAgent(acNetwork)
-acAgent.load_model("AcAgent_1")
 
 reinforceNetwork = ReinforceNetwork(4, 2)
 reinforceAgent = ReinforceAgent(reinforceNetwork)
@@ -22,9 +21,9 @@ reinforceAgent = ReinforceAgent(reinforceNetwork)
 trnOpts = trn.TrainOpts()
 trnOpts.n_epochs = 100
 trnOpts.n_episodes = 100
-trainer = trn.Trainer(agent=acAgent, env=env, opts=trnOpts)
+trainer = trn.Trainer(agent=reinforceAgent, env=env, opts=trnOpts)
 trainer.train()
 trainer.test()
-acAgent.save_model("AcAgent_1")
+acAgent.save_model("ReinforceAgent_1")
 
 
