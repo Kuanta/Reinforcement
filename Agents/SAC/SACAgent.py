@@ -17,6 +17,7 @@ import random
 import copy
 from Agents.BaseAgentOptions import BaseAgentOptions
 import os, time
+from Trainer import TrainOpts
 
 class SACAgentOptions(BaseAgentOptions):
     def __init__(self):
@@ -76,14 +77,17 @@ class SACAgent(Agent):
             self.exp_buffer.last_cluster_id = index  # Just in case
             return action
     def act(self, new_state, device="cpu", clustering=False, evaluation=False):
+        # TODO: For now evaluation and no evaluation same. 
         if not evaluation:
-            new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
-            action, _, _  = self.actor_net.sample(new_state, add_noise=True)
+            #new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
+            with torch.no_grad():
+                action, _, _  = self.actor_net.sample(new_state, add_noise=True)
             return action.squeeze(0).detach().cpu().numpy()
         else:
-            new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
-            _ , _, mean  = self.actor_net.sample(new_state, add_noise=False)
-            return mean.squeeze(0).detach().cpu().numpy()
+            #new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
+            with torch.no_grad():
+                action , _, _  = self.actor_net.sample(new_state, add_noise=True)
+            return action.squeeze(0).detach().cpu().numpy()
 
     def update_params(self, n_iter, device):
         # Learn if enough data is accumulated
@@ -176,8 +180,8 @@ class SACAgent(Agent):
             critic_1, critic_2 = self.multihead_net.get_critics(features, s_actions)
             critic_loss_1 = F.mse_loss(critic_1, q_hat.detach())
             critic_loss_2 = F.mse_loss(critic_2, q_hat.detach())
-            critic_loss = critic_loss_1 + critic_loss_2
-            critic_loss.backward(retain_graph=True)
+            #critic_loss_1.backward(retain_graph=True)
+            #critic_loss_2.backward(retain_graph=True)
 
             # Calculate critic values for value and policy using the actions sampled from the current policy
             next_actions, log_probs, _ = self.multihead_net.sample(features, add_noise=True)
@@ -185,21 +189,27 @@ class SACAgent(Agent):
                 critic_1_curr, critic_2_curr = self.multihead_net.get_critics(features, next_actions)
                 critic_curr = torch.min(critic_1_curr, critic_2_curr)
             # Value Loss
-            value_target =  (critic_curr.detach() - self.opts.entropy_scale*log_probs)
+            value_target =  (critic_curr.detach() - log_probs)
             value_loss = F.mse_loss(value, value_target.detach())
-            value_loss.backward(retain_graph=True)
+            #value_loss.backward(retain_graph=True)
 
             # Actor Loss
-            actor_loss = torch.mean(self.opts.entropy_scale*log_probs - critic_curr.detach())
-            actor_loss.backward(retain_graph=True)
+            actor_loss = torch.mean(log_probs - critic_curr.detach())
+            #actor_loss.backward(retain_graph=True)
 
+            if n_iter % 50 == 0:
+                print("Critic Loss 1: {}  - Critic Loss 2: {}  Value Loss: {} - Actor Loss: {}".format(critic_loss_1.item(), critic_loss_2.item(),
+                value_loss.item(), actor_loss.item()))
+
+            loss = critic_loss_1 + critic_loss_2 + value_loss + actor_loss
+            loss.backward()
             # Do all steps after
             self.multihead_optimizer.step()
 
             if n_iter % 1 == 0:
                 polyak_update(self.multihead_net.target_value, self.multihead_net.value, self.opts.tau)
 
-    def learn(self, env:Environment, max_episodes:int, max_steps:int):
+    def learn(self, env:Environment, trnOpts: TrainOpts):
         device = "cpu"
         if self.opts.use_gpu and torch.cuda.is_available():
             device = "cuda:0"
@@ -218,9 +228,13 @@ class SACAgent(Agent):
         # if not self.opts.clustering:
         #     explore_episodes = 0
 
+        max_episodes = trnOpts.n_episodes
+        max_steps = trnOpts.n_iterations
         while e < max_episodes:  # Looping episodes
-
+            if max_steps > 0 and n_iter > max_steps:
+                break
             curr_state = env.reset()
+            curr_state = torch.from_numpy(curr_state).to(device).float().unsqueeze(0)
             episode_rewards = []
             step = 0
             while True:
@@ -249,7 +263,8 @@ class SACAgent(Agent):
                         print("Clustering")
                         self.exp_buffer.cluster(self.opts.n_clusters, self.opts.use_elbow_plot)
                 
-                self.exp_buffer.add_experience(curr_state, action, reward, next_state, done)   
+                next_state = torch.from_numpy(next_state).to(device).float().unsqueeze(0)
+                self.exp_buffer.add_experience(curr_state.squeeze(0).cpu(), action, reward, next_state.squeeze(0).cpu(), done)   
     
                 if done:
                     episode_end_reward = np.array(episode_rewards).sum()
@@ -265,18 +280,17 @@ class SACAgent(Agent):
                 
                 curr_state = next_state
 
-                # Check total rewards
-                if np.array(episode_rewards).sum() < -1000:
-                    print("Too much neg reward")
-
                 # Learn if enough data is accumulated
                 if self.exp_buffer.is_accumulated(self.opts.exp_batch_size):
-                    start = time.time()
                     #self.update_params(n_iter, device)
-
+                    #start = time.time()
                     self.update_params_2(n_iter, device)
-                    end = time.time()
-                    print("Elapsed: {}".format(end-start))
+                    # end = time.time()
+                    # print("Elapsed :{}".format(end-start))
+                    
+                if n_iter > 0 and self.opts.save_frequency > 0 and n_iter % self.opts.save_frequency == 0:
+                    print("Saving at iteration {}".format(n_iter))
+                    self.save_model(trnOpts.save_path)
         
         
         return all_rewards, avg_rewards
@@ -285,14 +299,14 @@ class SACAgent(Agent):
         # Check Path
         if not os.path.exists(PATH):
             os.mkdir(PATH)
-        torch.save(self.multihead_net.state_dict(), os.path.join(PATH, "_multihead"))
+        torch.save(self.multihead_net.state_dict(), os.path.join(PATH, "multihead"))
         # torch.save(self.actor_net.state_dict(), os.path.join(PATH,"_actor"))
         # torch.save(self.value_net.state_dict(), os.path.join(PATH,"_value"))
         # torch.save(self.critic_net_1.state_dict(), os.path.join(PATH,"_critic_1"))
         # torch.save(self.critic_net_2.state_dict(), os.path.join(PATH,"_critic_2"))
     
     def load_model(self, PATH):
-        self.multihead_net.load_state_dict(torch.load(PATH))
+        self.multihead_net.load_state_dict(torch.load(os.path.join(PATH,"multihead")))
         # self.actor_net.load_state_dict(torch.load(os.path.join(PATH,"_actor")))
         # self.critic_net_1.load_state_dict(torch.load(os.path.join(PATH,"_critic_1")))
         # self.critic_net_2.load_state_dict(torch.load(os.path.join(PATH,"_critic_2")))

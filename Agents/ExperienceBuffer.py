@@ -8,6 +8,7 @@ from sklearn.cluster import KMeans
 from scipy.optimize import minimize
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
+import time
 
 def smooth(signal):
     nbins = signal.size
@@ -173,6 +174,7 @@ class ExperienceBuffer:
             sampled_rewards.append(self.rewards[idx])
             sampled_next_states.append(self.next_states[idx])
             sampled_done_flags.append((self.done[idx]))
+        
         return sampled_states, sampled_actions, sampled_rewards, \
             sampled_next_states, sampled_done_flags
 
@@ -199,10 +201,11 @@ class ExperienceBuffer:
        :return: Tensors in the form of states, actions, rewards, next_states, done
         '''
         states, actions, rewards, next_states, done = self.sample(batch_size)
-        states = torch.tensor(states).to(dtype=dtype, device=device)
+        states = torch.stack(states).to(device)
         actions = torch.tensor(actions).to(dtype=dtype, device=device)
         rewards = torch.tensor(rewards).to(dtype=dtype, device=device)
-        next_states = torch.tensor(next_states).to(dtype=dtype, device=device)
+        #next_states = torch.tensor(next_states).to(dtype=dtype, device=device)
+        next_states = torch.stack(next_states).to(device)
         done = torch.tensor(done).to(dtype=dtype, device=device)
         return states, actions, rewards, next_states, done
 
