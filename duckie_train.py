@@ -40,7 +40,7 @@ def train(args, agent_opts, train_opts):
         env.gym_env.action_space.high, \
         env.gym_env.action_space.low)
 
-    head_network = HeadNet(3)
+    head_network = BaseNet(3)
     head_out_size = 1024
     value_net = ValueNet(head_network, head_out_size)
     target_value_net = ValueNet(head_network, head_out_size)
@@ -48,13 +48,12 @@ def train(args, agent_opts, train_opts):
     critic_net_1 = CriticNet(head_network, head_out_size, act_size)
     critic_net_2 = CriticNet(head_network, head_out_size, act_size)
 
-    multihead_net = SACNetwork(3, act_size)
+    multihead_net = DuckieNetwork(3, act_size)
    
-    agent = SACAgent(multihead_net, actor_net, critic_net_1, critic_net_2, value_net, target_value_net, action_def, agent_opts)
+    agent = SACAgent(multihead_net, action_def, agent_opts)
     
     if args.checkpoint_path is not None:
         agent.load_model(args.checkpoint_path)
-    time = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
 
     trainer = trn.Trainer(agent, env, train_opts)
     trainer.train()

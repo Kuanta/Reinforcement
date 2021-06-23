@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from Environments.Environment import Environment, DiscreteDefinition, ContinuousDefinition
 from Agents.Agent import Agent
+from Agents.SAC.Networks import MultiheadNetwork
 from Agents.ExperienceBuffer import ExperienceBuffer
 from Agents.StackedState import StackedState
 from common import polyak_update, freeze_network
@@ -41,28 +42,17 @@ class SACAgent(Agent):
     '''
     Implements a Soft Actor-Critic agent
     '''
-    def __init__(self, multihead_net, actor_net, critic_net_1, critic_net_2, value_net, target_value_net, act_def: ContinuousDefinition, opts:SACAgentOptions=SACAgentOptions()):
+    def __init__(self, multihead_net: MultiheadNetwork, act_def: ContinuousDefinition, opts:SACAgentOptions=SACAgentOptions()):
         super().__init__()
-        self.actor_net = actor_net
-        self.critic_net_1 = critic_net_1
-        self.critic_net_2 = critic_net_2
-        self.value_net = value_net
-        self.target_value_net = target_value_net
         self.opts = opts
         self.act_def = act_def
-        self.actor_optimizer = torch.optim.Adam(self.actor_net.parameters(), self.opts.learning_rate)
-        self.critic_optimizer_1 = torch.optim.Adam(self.critic_net_1.parameters(), self.opts.learning_rate)
-        self.critic_optimizer_2 = torch.optim.Adam(self.critic_net_2.parameters(), self.opts.learning_rate)
-        self.value_optimizer = torch.optim.Adam(self.value_net.parameters(), self.opts.learning_rate)
         self.exp_buffer = ExperienceBuffer(self.opts.exp_buffer_size, act_def)
         self.multihead_net = multihead_net
-        self.multihead_optimizer = torch.optim.Adam(self.multihead_net.parameters(), self.opts.learning_rate)
+        self.multihead_net.init_network(self.opts.learning_rate)
         
-        if not getattr(self.actor_net, "sample"):
-            raise("Actor Network must implement 'sample' method")
+        if not getattr(self.multihead_net, "sample"):
+            raise("Network must implement 'sample' method")
 
-        polyak_update(self.target_value_net, self.value_net, 1)
-        polyak_update(self.multihead_net.target_value, self.multihead_net.value, 1)
     
     def act_cluster(self, new_state, n_episode):
         # Classify new_state
@@ -78,77 +68,21 @@ class SACAgent(Agent):
                 action = cluster.generate_action_reward(self.act_def)
             self.exp_buffer.last_cluster_id = index  # Just in case
             return action
-    def act(self, new_state, device="cpu", clustering=False, evaluation=False):
+
+    def act(self, new_state, evaluation=False):
         # TODO: For now evaluation and no evaluation same. 
         if not evaluation:
             #new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
             with torch.no_grad():
-                action, _, _  = self.actor_net.sample(new_state, add_noise=True)
+                action, _, _  = self.multihead_net.sample(new_state, add_noise=True)
             return action.squeeze(0).detach().cpu().numpy()
         else:
             #new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
             with torch.no_grad():
-                action , _, _  = self.actor_net.sample(new_state, add_noise=True)
+                action , _, _  = self.multihead_net.sample(new_state, add_noise=False)
             return action.squeeze(0).detach().cpu().numpy()
 
     def update_params(self, n_iter, device):
-        # Learn if enough data is accumulated
-        if self.exp_buffer.is_accumulated(self.opts.exp_batch_size):
-            if(self.opts.clustering and len(self.exp_buffer.clusters) == 0):
-                return
-
-            # Sample from buffer
-            s_states, s_actions, s_rewards, s_next_states, s_done =\
-            self.exp_buffer.sample_tensor(self.opts.exp_batch_size, device, torch.float)
-
-            # Find criticent
-            next_actions, log_probs, _ = self.actor_net.sample(s_states, add_noise=True)
-            log_probs = log_probs.view(-1)
-
-            # Target Value
-            target_value = (self.target_value_net(s_next_states)*(1-s_done.view(-1,1))).view(-1)  # Check terminal state
-            value = self.value_net(s_states).view(-1)
-
-                # Optimize Critic Networks
-            self.critic_optimizer_1.zero_grad()
-            self.critic_optimizer_2.zero_grad()
-            with torch.no_grad():
-                q_hat = s_rewards + self.opts.discount*target_value
-                
-            q_val_1 = self.critic_net_1(s_states, s_actions)  # Use actions from replay buffer
-            q_val_2 = self.critic_net_2(s_states, s_actions)  # Use actions from replay buffer
-            
-            critic_loss_1 = F.mse_loss(q_val_1.view(-1), q_hat.view(-1).detach())
-            critic_loss_2 = F.mse_loss(q_val_2.view(-1), q_hat.view(-1).detach())
-            critic_loss = critic_loss_1 + critic_loss_2
-            critic_loss.backward(retain_graph=True)
-    
-
-            # Optimize Value network
-            critic_1 = self.critic_net_1(s_states, next_actions)
-            critic_2 = self.critic_net_2(s_states, next_actions)
-            critic = torch.min(critic_1, critic_2).view(-1)  # This will be used for actor optimization also
-            self.value_optimizer.zero_grad()
-            
-            value_target =  (critic - self.opts.entropy_scale*log_probs)
-            value_loss = F.mse_loss(value, value_target.detach())
-
-            value_loss.backward(retain_graph=True)
-
-            actor_loss = torch.mean(self.opts.entropy_scale*log_probs - critic)
-            self.actor_optimizer.zero_grad()
-            actor_loss.backward(retain_graph=True)
-
-            # Do all steps after
-            self.critic_optimizer_1.step()                    
-            self.critic_optimizer_2.step()
-            self.value_optimizer.step()
-            self.actor_optimizer.step()
-
-            if n_iter % 1 == 0:
-                polyak_update(self.target_value_net, self.value_net, self.opts.tau)
-
-    def update_params_2(self, n_iter, device):
         '''
         If multiheaded network, implement this
         '''
@@ -164,17 +98,20 @@ class SACAgent(Agent):
             s_states, s_actions, s_rewards, s_next_states, s_done =\
             self.exp_buffer.sample_tensor(self.opts.exp_batch_size, device, torch.float)
 
-            self.multihead_optimizer.zero_grad()
             features = self.multihead_net(s_states)
+            target_features = self.multihead_net(s_next_states)
 
-            # Value, Critic, Actor
+            next_actions, log_probs, _ = self.multihead_net.sample(features, add_noise=True)
+
+            # Target Values
+            target_value = self.multihead_net.get_target_value(target_features)
+            target_value = (target_value*(1-s_done.view(-1,1)))
+
             value = self.multihead_net.get_value(features)
-            with torch.no_grad():
-                next_features = self.multihead_net(s_next_states)
-                target_value = self.multihead_net.get_target_value(next_features)
-                target_value = (target_value*(1-s_done.view(-1,1)))
             
-
+            
+            self.multihead_net.critic_1_optimizer.zero_grad()
+            self.multihead_net.critic_2_optimizer.zero_grad()
             # Critics Loss
             with torch.no_grad():
                 q_hat = s_rewards.view(-1,1) + self.opts.discount*target_value
@@ -182,45 +119,46 @@ class SACAgent(Agent):
             critic_1, critic_2 = self.multihead_net.get_critics(features, s_actions)
             critic_loss_1 = F.mse_loss(critic_1, q_hat.detach())
             critic_loss_2 = F.mse_loss(critic_2, q_hat.detach())
-            #critic_loss_1.backward(retain_graph=True)
-            #critic_loss_2.backward(retain_graph=True)
+            critic_loss = critic_loss_1 + critic_loss_2
+            critic_loss.backward(retain_graph = True)
+            self.multihead_net.critic_1_optimizer.step()
+            self.multihead_net.critic_2_optimizer.step()
 
             # Calculate critic values for value and policy using the actions sampled from the current policy
-            next_actions, log_probs, _ = self.multihead_net.sample(features, add_noise=True)
-            with torch.no_grad():
-                critic_1_curr, critic_2_curr = self.multihead_net.get_critics(features, next_actions)
-                critic_curr = torch.min(critic_1_curr, critic_2_curr)
+            critic_1_curr, critic_2_curr = self.multihead_net.get_critics(features, next_actions)
+            critic_curr = torch.min(critic_1_curr, critic_2_curr)
             # Value Loss
-            value_target =  (critic_curr.detach() - log_probs)
+            self.multihead_net.value_optimizer.zero_grad()
+            value_target =  (critic_curr - log_probs)
             value_loss = F.mse_loss(value, value_target.detach())
-            #value_loss.backward(retain_graph=True)
+            value_loss.backward(retain_graph=True)
+            self.multihead_net.value_optimizer.step()
+
 
             # Actor Loss
-            actor_loss = torch.mean(log_probs - critic_curr.detach())
-            #actor_loss.backward(retain_graph=True)
+            self.multihead_net.policy_optimizer.zero_grad()
+            actor_loss = torch.mean(log_probs - critic_curr)
+            actor_loss.backward(retain_graph=True)
+            self.multihead_net.policy_optimizer.step()
 
-            if n_iter % 50 == 0:
+            if self.multihead_net.base_net is not None:
+                self.multihead_net.base_optimizer.step()
+
+            if n_iter % 2500 == 0:
                 print("Critic Loss 1: {}  - Critic Loss 2: {}  Value Loss: {} - Actor Loss: {}".format(critic_loss_1.item(), critic_loss_2.item(),
                 value_loss.item(), actor_loss.item()))
 
-            loss = critic_loss_1 + critic_loss_2 + value_loss + actor_loss
-            loss.backward()
-            # Do all steps after
-            self.multihead_optimizer.step()
+            
+
 
             if n_iter % 1 == 0:
-                polyak_update(self.multihead_net.target_value, self.multihead_net.value, self.opts.tau)
+                polyak_update(self.multihead_net.target_value_net, self.multihead_net.value_net, self.opts.tau)
 
     def learn(self, env:Environment, trnOpts: TrainOpts):
         device = "cpu"
         if self.opts.use_gpu and torch.cuda.is_available():
             device = "cuda:0"
         
-        self.actor_net.to(device)
-        self.value_net.to(device)
-        self.target_value_net.to(device)
-        self.critic_net_1.to(device)
-        self.critic_net_2.to(device)
         self.multihead_net.to(device)
         all_rewards = []
         avg_rewards = []
@@ -289,7 +227,7 @@ class SACAgent(Agent):
                 if self.exp_buffer.is_accumulated(self.opts.exp_batch_size):
                     #self.update_params(n_iter, device)
                     #start = time.time()
-                    self.update_params_2(n_iter, device)
+                    self.update_params(n_iter, device)
                     # end = time.time()
                     # print("Elapsed :{}".format(end-start))
                     
@@ -305,18 +243,9 @@ class SACAgent(Agent):
         if not os.path.exists(PATH):
             os.mkdir(PATH)
         torch.save(self.multihead_net.state_dict(), os.path.join(PATH, "multihead"))
-        # torch.save(self.actor_net.state_dict(), os.path.join(PATH,"_actor"))
-        # torch.save(self.value_net.state_dict(), os.path.join(PATH,"_value"))
-        # torch.save(self.critic_net_1.state_dict(), os.path.join(PATH,"_critic_1"))
-        # torch.save(self.critic_net_2.state_dict(), os.path.join(PATH,"_critic_2"))
     
     def load_model(self, PATH):
         self.multihead_net.load_state_dict(torch.load(os.path.join(PATH,"multihead")))
-        # self.actor_net.load_state_dict(torch.load(os.path.join(PATH,"_actor")))
-        # self.critic_net_1.load_state_dict(torch.load(os.path.join(PATH,"_critic_1")))
-        # self.critic_net_2.load_state_dict(torch.load(os.path.join(PATH,"_critic_2")))
-        # self.value_net.load_state_dict(torch.load(os.path.join(PATH,"_value")))
-
 
     def reset():
         pass

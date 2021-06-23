@@ -5,8 +5,9 @@ from Environments.Environment import ContinuousDefinition
 import Trainer as trn
 import gym
 import os, datetime
+from lunar_networks import LunarNetwork
 
-TEST = True  #Set to true to see a trained agent playing Lunar Lander
+TEST = False  #Set to true to see a trained agent playing Lunar Lander
 
 env = GymEnvironment(gym.make('LunarLanderContinuous-v2'))
 state_size = env.gym_env.observation_space.shape[0]
@@ -28,7 +29,7 @@ opts.learning_rate = 0.0003
 opts.exp_batch_size = 256
 opts.tau = 0.005
 opts.use_gpu = True
-opts.clustering = True
+opts.clustering = False
 opts.cluster_samples = 50000
 opts.use_elbow_plot = False
 opts.n_clusters = 30
@@ -36,8 +37,10 @@ opts.n_episodes_exploring = 250  # Number of episodes that uses clustered explor
 opts.n_episodes_exploring_least_acts = 250 #Nubmer of episodes that explores by searching for least used acitions
 opts.update_cluster_scale = 5 # When to create new clusters? See classify in ExperienceBuffer
 opts.cluster_only_for_buffer = True   # If set to true, clustered exploration will only be used for replay buffer filling
+opts.render = False
 
-agent = SACAgent(actor_net, critic_net_1, critic_net_2, value_net, target_value_net, action_def, opts)
+multihead_net = LunarNetwork(state_size, action_size=act_size)
+agent = SACAgent(multihead_net, action_def, opts)
 
 
 if  TEST:
