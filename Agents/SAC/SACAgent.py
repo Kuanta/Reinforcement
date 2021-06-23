@@ -28,11 +28,13 @@ class SACAgentOptions(BaseAgentOptions):
         self.cluster_samples = 10000  # Number of samples to collect before clustering
         self.clustering = True  # If set to true, states will be clustered
         self.n_clusters = 20
-        self.update_cluster_scale = 5  # Check update_cluster func
+        self.update_cluster_scale = 10  # Check update_cluster func
         self.use_elbow_plot = False
         self.n_episodes_exploring = 100  # Number of episodes using clustered exploration
         self.n_episodes_exploring_least_acts = 50
         self.entropy_scale = 0.5
+        self.samples_to_collect_clustering = 100000  # Instead of using clusterd 
+        self.cluster_only_for_buffer = False   # If set to true, clustered eexploration will only be used for replay buffer filling
 
 class SACAgent(Agent):
     '''
@@ -66,7 +68,7 @@ class SACAgent(Agent):
             # Calculate next action
             if n_episode < self.opts.n_episodes_exploring_least_acts:
             # Exploring with using least used actions
-                action = cluster.generate_action_reward(self.act_def)
+                action = cluster.generate_action(self.act_def)
             else:
                 # Using acitons with better rewards
                 action = cluster.generate_action_reward(self.act_def)
@@ -128,14 +130,17 @@ class SACAgent(Agent):
                     and len(self.exp_buffer.clusters) == 0:  # It means that clustering already done
                         print("Clustering")
                         self.exp_buffer.cluster(self.opts.n_clusters, self.opts.use_elbow_plot)
+
                 
                 self.exp_buffer.add_experience(curr_state, action, reward, next_state, done)   
                 if done:
-                    episode_end_reward = np.array(episode_rewards).sum()
-                    all_rewards.append(episode_end_reward)
+                   
                     if not self.exp_buffer.is_accumulated(self.opts.exp_batch_size) or (self.opts.clustering and len(self.exp_buffer.states) < self.opts.cluster_samples):
                         print("Accumulating buffer iteration: {}".format(n_iter))
+                    
                     else:
+                        episode_end_reward = np.array(episode_rewards).sum()
+                        all_rewards.append(episode_end_reward)
                         e += 1  # Update episode
                         avg_reward = np.mean(all_rewards[-100:])
                         avg_rewards.append(avg_reward)
@@ -152,7 +157,10 @@ class SACAgent(Agent):
 
                     if(self.opts.clustering and len(self.exp_buffer.clusters) == 0):
                         continue
-     
+                    
+                    if(self.opts.clustering and self.opts.cluster_only_for_buffer and e < self.opts.n_episodes_exploring):
+                        continue 
+
                     # Sample from buffer
                     s_states, s_actions, s_rewards, s_next_states, s_done =\
                     self.exp_buffer.sample_tensor(self.opts.exp_batch_size, device, torch.float)
