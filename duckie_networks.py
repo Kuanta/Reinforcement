@@ -80,7 +80,7 @@ class ActorNet(nn.Module):
         return mu, log_sigma
 
 class DuckieNetwork(MultiheadNetwork):
-    def __init__(self, in_channels, action_size, reparam_noise=1e-6):
+    def __init__(self, in_channels, action_size):
         base_net = BaseNet(in_channels)
         base_out_size = 1024
         value_net = ValueNet(base_out_size)
