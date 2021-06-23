@@ -15,7 +15,7 @@ class TrainOpts:
         self.optimizer = optim.Adam
         self.episodic = True
         self.n_episodes = 100  # Number of episodes to run before calling the learn method of the agent
-        self.n_iterations = 100
+        self.n_iterations = -1
         self.save_path = "./tmp"
 
 
@@ -27,12 +27,13 @@ class Trainer:
 
     def train(self):
         if self.opts.episodic:
-            all_rewards, avg_rewards = self.agent.learn(self.env, self.opts.n_episodes, self.opts.n_iterations)
+            all_rewards, avg_rewards = self.agent.learn(self.env, self.opts)
             info = {"Rewards":all_rewards, "Averages":avg_rewards}
             if not os.path.exists(self.opts.save_path):
                 os.mkdir(self.opts.save_path)
             with open(os.path.join(self.opts.save_path, "rewards"), 'w') as fp:
                 json.dump(info, fp)
+            self.agent.save_model(self.opts.save_path)
         else:
             # TODO: Implement continuous training
             pass

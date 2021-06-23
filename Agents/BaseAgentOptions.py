@@ -17,3 +17,5 @@ class BaseAgentOptions:
         self.verbose = True
         self.verbose_frequency = 1000
         self.render = True
+        self.save_frequency = 1000  # Save frequency in terms of steps
+        self.model_path = "model"

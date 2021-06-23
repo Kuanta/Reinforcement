@@ -32,8 +32,9 @@ class ReinforceAgent(Agent):
         log_prob = m.log_prob(action)
         return action.item(), log_prob
 
-    def learn(self, environment, n_episodes):
+    def learn(self, environment, n_episodes, n_iters=1000):
         total_loss = []
+        total_rewards = []
         for _ in range(n_episodes):
             curr_state = environment.reset()
             states = []
@@ -52,16 +53,19 @@ class ReinforceAgent(Agent):
                 curr_state = obs
                 if done:
                     break
+            total_rewards.append(total_reward)
             print("Episode return:%f" % (total_reward))
             returns = torch.tensor(calc_returns(rewards))
             returns = (returns - returns.mean()) / (returns.std() + 0.00001)
             episode_loss = torch.sum(torch.cat(log_probs) * returns)
             total_loss.append((-1 * episode_loss).float())
 
-        self.optimizer.zero_grad()
-        loss = torch.sum(torch.stack(total_loss)).float()
-        loss.backward()
-        self.optimizer.step()
+            self.optimizer.zero_grad()
+            loss = torch.sum(torch.stack(total_loss)).float()
+            loss.backward()
+            self.optimizer.step()
+
+        return total_rewards, 0
 
     def save_model(self, path: str):
         torch.save(self.network.state_dict(), path)
