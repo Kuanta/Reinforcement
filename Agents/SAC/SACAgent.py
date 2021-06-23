@@ -10,14 +10,11 @@ from Environments.Environment import Environment, DiscreteDefinition, Continuous
 from Agents.Agent import Agent
 from Agents.SAC.Networks import MultiheadNetwork
 from Agents.ExperienceBuffer import ExperienceBuffer
-from Agents.StackedState import StackedState
 from common import polyak_update, freeze_network
 import Agents.ExperienceBuffer as exp
 import numpy as np
-import random
-import copy
 from Agents.BaseAgentOptions import BaseAgentOptions
-import os, time
+import os, json
 from Trainer import TrainOpts
 
 class SACAgentOptions(BaseAgentOptions):
@@ -234,6 +231,7 @@ class SACAgent(Agent):
                 if n_iter > 0 and self.opts.save_frequency > 0 and n_iter % self.opts.save_frequency == 0:
                     print("Saving at iteration {}".format(n_iter))
                     self.save_model(trnOpts.save_path)
+                    self.save_rewards(trnOpts.save_path, all_rewards, avg_rewards)
         
         
         return all_rewards, avg_rewards
@@ -244,6 +242,14 @@ class SACAgent(Agent):
             os.mkdir(PATH)
         torch.save(self.multihead_net.state_dict(), os.path.join(PATH, "multihead"))
     
+    def save_rewards(self, PATH, all_rewards, avg_rewards):
+        if not os.path.exists(PATH):
+            os.mkdir(PATH)
+        torch.save(self.multihead_net.state_dict(), os.path.join(PATH, "multihead"))
+        info = {"Rewards":all_rewards, "Averages":avg_rewards}
+        with open(os.path.join(self.opts.save_path, "rewards"), 'w') as fp:
+            json.dump(info, fp)
+
     def load_model(self, PATH):
         self.multihead_net.load_state_dict(torch.load(os.path.join(PATH,"multihead")))
 
