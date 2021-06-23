@@ -247,7 +247,7 @@ class SACAgent(Agent):
             os.mkdir(PATH)
         torch.save(self.multihead_net.state_dict(), os.path.join(PATH, "multihead"))
         info = {"Rewards":all_rewards, "Averages":avg_rewards}
-        with open(os.path.join(self.opts.save_path, "rewards"), 'w') as fp:
+        with open(os.path.join(PATH, "rewards"), 'w') as fp:
             json.dump(info, fp)
 
     def load_model(self, PATH):
