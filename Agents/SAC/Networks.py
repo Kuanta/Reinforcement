@@ -49,15 +49,13 @@ class MultiheadNetwork(nn.Module):
             return x
 
     def get_critics(self, features, actions):
-        x = torch.cat([features,actions],1)
-        critic_1 = self.critic_1_net(x)
-        critic_2 = self.critic_2_net(x)
+        critic_1 = self.critic_1_net(features, actions)
+        critic_2 = self.critic_2_net(features, actions)
         return critic_1, critic_2
     
     def get_target_critics(self, features, actions):
-        x = torch.cat([features,actions],1)
-        critic_1 = self.target_critic_1_net(x)
-        critic_2 = self.target_critic_2_net(x)
+        critic_1 = self.target_critic_1_net(features, actions)
+        critic_2 = self.target_critic_2_net(features, actions)
         return critic_1, critic_2
 
     def sample(self, features, add_noise=False):
@@ -89,3 +87,5 @@ class MultiheadNetwork(nn.Module):
     def update_targets(self, tau):
         polyak_update(self.target_critic_1_net, self.critic_1_net, tau)
         polyak_update(self.target_critic_2_net, self.critic_2_net, tau)
+
+

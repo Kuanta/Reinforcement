@@ -1,4 +1,4 @@
-from Agents.SACv2.SACAgent import SACAgent
+from Agents.SAC.SACAgent import SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
 from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper
@@ -38,9 +38,9 @@ def test(args):
 
 
 
-    multihead_net = SACNetwork(3, act_size)
+    multihead_net = DuckieNetwork(3, act_size)
    
-    agent = SACAgent(multihead_net, actor_net, critic_net_1, critic_net_2, value_net, target_value_net, action_def)
+    agent = SACAgent(multihead_net, action_def)
    
     agent.load_model(args.model_path)
    
@@ -58,13 +58,13 @@ def test(args):
             total_reward += reward
             env.render()
             if done:
-                print("Total reward:"+total_reward)
+                print("Total reward:{}".format(total_reward))
                 break
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--n-episodes", type=int, help="Number of episodes to play")
-parser.add_argument("--model-path", type=str, help="Path to the model")
+parser.add_argument("--n-episodes", type=int, default=10, help="Number of episodes to play")
+parser.add_argument("--model-path", default="duckie_models/simple", type=str, help="Path to the model")
 
 args = parser.parse_args()
 test(args)

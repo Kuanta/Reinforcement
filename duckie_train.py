@@ -1,8 +1,8 @@
 from torch.serialization import save
-from Agents.SACv2.SACAgent import SACAgentOptions, SACAgent
+from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
-from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper
+from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper, EncoderWrapper
 import Trainer as trn
 import torch
 import torch.nn as nn
@@ -11,36 +11,42 @@ import gym_duckietown.envs.duckietown_env as duckie
 from gym_duckietown.envs.duckietown_env import DuckietownEnv
 import os, datetime, argparse
 from duckie_networks import *
+from Encoder import BetaVAE_B, BetaVAE_H
 
 def train(args, agent_opts, train_opts):
     duckie.logger.disabled = True # Disable log messages from ducki  
     env = DuckietownEnv(
         seed = None,
-        map_name = "ETHZ_loop_bordered",
+        map_name = "4way_bordered",
         max_steps = 500001,
         draw_curve = False,
         draw_bbox = False,
         domain_rand = False,
         randomize_maps_on_reset = False,
         accept_start_angle_deg = 4,
-        full_transparency = True,
+        full_transparency = False,
         user_tile_start = None,
         num_tris_distractors = 12,
         enable_leds = False,
     )
 
-    env = ResizeWrapper(env, 80, 80)
+    # Load Encoder
+    encoder = BetaVAE_H(10, 3)
+    loaded_model = torch.load(args.encoder_path)
+    encoder.load_state_dict(loaded_model['model_states']['net'])
+    env = ResizeWrapper(env, 64, 64)
     env = SwapDimensionsWrapper(env)
     env = ImageNormalizeWrapper(env)
+    env = EncoderWrapper(env, encoder, agent_opts.use_gpu)
     env = GymEnvironment(env)
 
-    state_size = env.gym_env.observation_space.shape[0]
+    state_size = 10  # Bottleneck of VAE
     act_size = env.gym_env.action_space.shape[0]
     action_def = ContinuousDefinition(env.gym_env.action_space.shape, \
         env.gym_env.action_space.high, \
         env.gym_env.action_space.low)
 
-    multihead_net = DuckieNetwork(3, act_size)
+    multihead_net = DuckieNetwork(state_size, act_size)
    
     agent = SACAgent(multihead_net, action_def, agent_opts)
     
@@ -64,6 +70,7 @@ parser.add_argument("--save-path", type=str, default="duckie_models/simple", hel
 parser.add_argument("--save-freq", type=int, default=10000, help="Number of iterations to save the model")
 parser.add_argument("--checkpoint-path", type=str, default=None, help="Path to checkpoint. Use it to resume training")
 parser.add_argument("--entropy-scale", type=float, default=0.2, help="Entropy scale used in loss functions")
+parser.add_argument("--encoder-path", type=str, default="encoder_model/last", help="Path to the saved encoder model")
 
 args = parser.parse_args()
 

@@ -3,12 +3,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
 from Environments.Environment import ContinuousDefinition
-from Agents.SACv2.Networks import MultiheadNetwork, SACNetworks
+from Agents.SAC.Networks import MultiheadNetwork, SACNetworks
 
 def init_weight(m):
     if type(m) == nn.Linear:
         m.weight.data.uniform_(-3e-3,3e-3)
         m.bias.data.uniform_(-3e-3,3e-3)
+
+class BaseNet(nn.Module):
+    def __init__(self, input_size, hidden_size=128, layer_size=1):
+        self.lstm = nn.LSTMCell(input_size=input_size, hidden_size=hidden_size)
 
 class ValueNet(nn.Module):
     def __init__(self, state_size):

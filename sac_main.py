@@ -1,4 +1,4 @@
-from Agents.SACv2.SACAgent import SACAgentOptions, SACAgent
+from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
 import Trainer as trn
