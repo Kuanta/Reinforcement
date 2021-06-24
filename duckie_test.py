@@ -1,4 +1,4 @@
-from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
+from Agents.SACv2.SACAgent import SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
 from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper
@@ -36,13 +36,7 @@ def test(args):
         env.gym_env.action_space.high, \
         env.gym_env.action_space.low)
 
-    head_network = HeadNet(3)
-    head_out_size = 1024
-    value_net = ValueNet(head_network, head_out_size)
-    target_value_net = ValueNet(head_network, head_out_size)
-    actor_net = ActorNet(head_network, head_out_size, action_def, 1e-6)
-    critic_net_1 = CriticNet(head_network, head_out_size, act_size)
-    critic_net_2 = CriticNet(head_network, head_out_size, act_size)
+
 
     multihead_net = SACNetwork(3, act_size)
    

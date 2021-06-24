@@ -1,5 +1,4 @@
-from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
-from Agents.SAC.Networks import ValueNet, ActorNet, CriticNet
+from Agents.SACv2.SACAgent import SACAgentOptions, SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
 import Trainer as trn
@@ -15,12 +14,6 @@ act_size = env.gym_env.action_space.shape[0]
 action_def = ContinuousDefinition(env.gym_env.action_space.shape, \
     env.gym_env.action_space.high, \
     env.gym_env.action_space.low)
-
-value_net = ValueNet(state_size)
-target_value_net = ValueNet(state_size)
-actor_net = ActorNet(state_size, action_def, 1e-6)
-critic_net_1 = CriticNet(state_size, act_size)
-critic_net_2 = CriticNet(state_size, act_size)
 
 opts = SACAgentOptions()
 

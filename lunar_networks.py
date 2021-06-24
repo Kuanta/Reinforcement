@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
 from Environments.Environment import ContinuousDefinition
-from Agents.SAC.Networks import MultiheadNetwork, SACNetworks
+from Agents.SACv2.Networks import MultiheadNetwork, SACNetworks
 
 def init_weight(m):
     if type(m) == nn.Linear:
@@ -64,11 +64,11 @@ class LunarNetwork(MultiheadNetwork):
     def __init__(self, state_size, action_size, init_w = 3e-3):
         self.reparam_noise = 1e-6
         
-        value_net = ValueNet(state_size)
-        target_net = ValueNet(state_size)
         critic_1_net = CriticNet(state_size, action_size)
         critic_2_net = CriticNet(state_size, action_size)
+        target_critic_1_net = CriticNet(state_size, action_size)
+        target_critic_2_net = CriticNet(state_size, action_size)
         policy_net = PolicyNet(state_size, action_size)
 
-        networks = SACNetworks(None, value_net, target_net, critic_1_net, critic_2_net, policy_net)
+        networks = SACNetworks(None, critic_1_net, critic_2_net, target_critic_1_net, target_critic_2_net, policy_net)
         super().__init__(networks)

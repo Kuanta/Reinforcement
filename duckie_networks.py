@@ -1,5 +1,5 @@
 from lunar_networks import PolicyNet
-from Agents.SAC.Networks import MultiheadNetwork, SACNetworks
+from Agents.SACv2.Networks import MultiheadNetwork, SACNetworks
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,8 +46,7 @@ class CriticNet(nn.Module):
         self.fc3.weight.data.uniform_(-(3e-3), 3e-3)
         self.fc3.bias.data.uniform_(-(3e-3), 3e-3)
 
-    def forward(self, features, actions):
-        x = torch.cat([features,actions],1)
+    def forward(self, x):
         x = self.fc1(x)
         x = F.relu(x)
         x = self.fc2(x)
@@ -83,10 +82,10 @@ class DuckieNetwork(MultiheadNetwork):
     def __init__(self, in_channels, action_size):
         base_net = BaseNet(in_channels)
         base_out_size = 1024
-        value_net = ValueNet(base_out_size)
-        target_net = ValueNet(base_out_size)
         critic_1_net = CriticNet(base_out_size, action_size)
         critic_2_net = CriticNet(base_out_size, action_size)
+        target_critic_1_net = CriticNet(base_out_size, action_size)
+        target_critic_2_net = CriticNet(base_out_size, action_size)
         policy_net = PolicyNet(base_out_size, action_size)
-        networks = SACNetworks(base_net, value_net, target_net, critic_1_net, critic_2_net, policy_net)
+        networks = SACNetworks(base_net, critic_1_net, critic_2_net, target_critic_1_net, target_critic_2_net, policy_net)
         super().__init__(networks)

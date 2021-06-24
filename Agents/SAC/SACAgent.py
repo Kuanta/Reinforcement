@@ -8,13 +8,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 from Environments.Environment import Environment, DiscreteDefinition, ContinuousDefinition
 from Agents.Agent import Agent
-from Agents.SAC.Networks import MultiheadNetwork
+from Agents.SACv2.Networks import MultiheadNetwork
 from Agents.ExperienceBuffer import ExperienceBuffer
-from common import polyak_update, freeze_network
 import Agents.ExperienceBuffer as exp
 import numpy as np
 from Agents.BaseAgentOptions import BaseAgentOptions
-import os, json
+import os, json, time
 from Trainer import TrainOpts
 
 class SACAgentOptions(BaseAgentOptions):
@@ -67,6 +66,7 @@ class SACAgent(Agent):
             return action
 
     def act(self, new_state, evaluation=False):
+        new_state = self.multihead_net.feature_extraction(new_state)
         # TODO: For now evaluation and no evaluation same. 
         if not evaluation:
             #new_state = torch.from_numpy(new_state).to(device).float().unsqueeze(0)
@@ -96,60 +96,47 @@ class SACAgent(Agent):
             self.exp_buffer.sample_tensor(self.opts.exp_batch_size, device, torch.float)
 
             features = self.multihead_net(s_states)
-            target_features = self.multihead_net(s_next_states)
 
-            next_actions, log_probs, _ = self.multihead_net.sample(features, add_noise=True)
 
             # Target Values
-            target_value = self.multihead_net.get_target_value(target_features)
-            target_value = (target_value*(1-s_done.view(-1,1)))
-
-            value = self.multihead_net.get_value(features)
-            
-            
-            self.multihead_net.critic_1_optimizer.zero_grad()
-            self.multihead_net.critic_2_optimizer.zero_grad()
-            # Critics Loss
             with torch.no_grad():
+                target_features = self.multihead_net(s_next_states)
+                next_actions, log_probs, _ = self.multihead_net.sample(target_features, add_noise=True)
+                critic_1_target, critic_2_target = self.multihead_net.get_target_critics(target_features, next_actions)
+                critic_target = torch.min(critic_1_target, critic_2_target)
+                target_value = critic_target - self.opts.entropy_scale*log_probs
+                target_value = (target_value*(1-s_done.view(-1,1)))
                 q_hat = s_rewards.view(-1,1) + self.opts.discount*target_value
-
+                        
+            # Optimize Critic
+            self.multihead_net.critic_optimizer.zero_grad()
             critic_1, critic_2 = self.multihead_net.get_critics(features, s_actions)
             critic_loss_1 = F.mse_loss(critic_1, q_hat.detach())
             critic_loss_2 = F.mse_loss(critic_2, q_hat.detach())
             critic_loss = critic_loss_1 + critic_loss_2
             critic_loss.backward(retain_graph = True)
-            self.multihead_net.critic_1_optimizer.step()
-            self.multihead_net.critic_2_optimizer.step()
+            self.multihead_net.critic_optimizer.step()
 
-            # Calculate critic values for value and policy using the actions sampled from the current policy
-            critic_1_curr, critic_2_curr = self.multihead_net.get_critics(features, next_actions)
-            critic_curr = torch.min(critic_1_curr, critic_2_curr)
-            # Value Loss
-            self.multihead_net.value_optimizer.zero_grad()
-            value_target =  (critic_curr - log_probs)
-            value_loss = F.mse_loss(value, value_target.detach())
-            value_loss.backward(retain_graph=True)
-            self.multihead_net.value_optimizer.step()
-
-
-            # Actor Loss
+            # Optimize Policy
             self.multihead_net.policy_optimizer.zero_grad()
-            actor_loss = torch.mean(log_probs - critic_curr)
-            actor_loss.backward(retain_graph=True)
+            # Calculate critic values for value and policy using the actions sampled from the current policy
+            actions, log_probs, _ = self.multihead_net.sample(features, add_noise=True)
+            critic_1_curr, critic_2_curr = self.multihead_net.get_critics(features, actions)
+            critic_curr = torch.min(critic_1_curr, critic_2_curr)
+            actor_loss = (self.opts.entropy_scale*log_probs - critic_curr).mean()
+            actor_loss.backward()
             self.multihead_net.policy_optimizer.step()
 
             if self.multihead_net.base_net is not None:
                 self.multihead_net.base_optimizer.step()
 
-            if n_iter % 2500 == 0:
-                print("Critic Loss 1: {}  - Critic Loss 2: {}  Value Loss: {} - Actor Loss: {}".format(critic_loss_1.item(), critic_loss_2.item(),
-                value_loss.item(), actor_loss.item()))
-
-            
+            # if n_iter % 2500 == 0:
+            #     print("Critic Loss 1: {}  - Critic Loss 2: {}  Value Loss: {} - Actor Loss: {}".format(critic_loss_1.item(), critic_loss_2.item(),
+            #     value_loss.item(), actor_loss.item()))
 
 
             if n_iter % 1 == 0:
-                polyak_update(self.multihead_net.target_value_net, self.multihead_net.value_net, self.opts.tau)
+                self.multihead_net.update_targets(self.opts.tau)
 
     def learn(self, env:Environment, trnOpts: TrainOpts):
         device = "cpu"
@@ -161,10 +148,6 @@ class SACAgent(Agent):
         avg_rewards = []
         n_iter = 0
         e = 0
-        # explore_episodes = self.opts.n_episodes_exploring
-        # if not self.opts.clustering:
-        #     explore_episodes = 0
-
         max_episodes = trnOpts.n_episodes
         max_steps = trnOpts.n_iterations
         while e < max_episodes:  # Looping episodes
@@ -225,8 +208,8 @@ class SACAgent(Agent):
                     #self.update_params(n_iter, device)
                     #start = time.time()
                     self.update_params(n_iter, device)
-                    # end = time.time()
-                    # print("Elapsed :{}".format(end-start))
+                    #end = time.time()
+                    #print("Elapsed :{}".format(end-start))
                     
                 if n_iter > 0 and self.opts.save_frequency > 0 and n_iter % self.opts.save_frequency == 0:
                     print("Saving at iteration {}".format(n_iter))

@@ -1,5 +1,5 @@
 from torch.serialization import save
-from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
+from Agents.SACv2.SACAgent import SACAgentOptions, SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
 from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper
@@ -16,7 +16,7 @@ def train(args, agent_opts, train_opts):
     duckie.logger.disabled = True # Disable log messages from ducki  
     env = DuckietownEnv(
         seed = None,
-        map_name = "zigzag_dists",
+        map_name = "ETHZ_loop_bordered",
         max_steps = 500001,
         draw_curve = False,
         draw_bbox = False,
@@ -40,14 +40,6 @@ def train(args, agent_opts, train_opts):
         env.gym_env.action_space.high, \
         env.gym_env.action_space.low)
 
-    head_network = BaseNet(3)
-    head_out_size = 1024
-    value_net = ValueNet(head_network, head_out_size)
-    target_value_net = ValueNet(head_network, head_out_size)
-    actor_net = ActorNet(head_network, head_out_size, action_def, 1e-6)
-    critic_net_1 = CriticNet(head_network, head_out_size, act_size)
-    critic_net_2 = CriticNet(head_network, head_out_size, act_size)
-
     multihead_net = DuckieNetwork(3, act_size)
    
     agent = SACAgent(multihead_net, action_def, agent_opts)
@@ -61,16 +53,17 @@ def train(args, agent_opts, train_opts):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--n-episodes", type=int, help="Number of episodes to train", default=100)
+parser.add_argument("--n-episodes", type=int, help="Number of episodes to train", default=5000)
 parser.add_argument("--n-iterations", type=int, default=-1, help="Number of max iterations. For unlimited iteration, set it to -1")
 parser.add_argument("--replay-buffer-size", type=int, default=100000, help="Size of the replay buffer")
 parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
 parser.add_argument("--l-rate", type=float, default=0.0003, help="Learning rate for the network")
-parser.add_argument("--use-gpu", action="store_true", default=False, help="Set to true to use gpu")
+parser.add_argument("--use-gpu", action="store_true", default=True, help="Set to true to use gpu")
 parser.add_argument("--tau", type=float, default=0.005, help="Used to update target network with polyak update")
 parser.add_argument("--save-path", type=str, default="duckie_models/simple", help="Path to save the model")
-parser.add_argument("--save-freq", type=int, default=2000, help="Number of iterations to save the model")
+parser.add_argument("--save-freq", type=int, default=10000, help="Number of iterations to save the model")
 parser.add_argument("--checkpoint-path", type=str, default=None, help="Path to checkpoint. Use it to resume training")
+parser.add_argument("--entropy-scale", type=float, default=0.2, help="Entropy scale used in loss functions")
 
 args = parser.parse_args()
 
@@ -83,7 +76,8 @@ opts.tau = args.tau
 opts.use_gpu = args.use_gpu
 opts.clustering = False
 opts.save_frequency = args.save_freq
-opts.render = False
+opts.render = True
+opts.entropy_scale = args.entropy_scale
 
 train_opts = trn.TrainOpts()
 train_opts.n_epochs = 1
