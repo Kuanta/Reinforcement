@@ -85,7 +85,8 @@ class SACAgent(Agent):
         if self.exp_buffer.is_accumulated(self.opts.exp_batch_size):
             if(self.opts.clustering and len(self.exp_buffer.clusters) == 0):
                 return
-
+            if self.multihead_net.base_optimizer is not None:
+                self.multihead_net.base_optimizer.zero_grad()
             # Sample from buffer
             s_states, s_actions, s_rewards, s_next_states, s_done =\
             self.exp_buffer.sample_tensor(self.opts.exp_batch_size, device, torch.float)
@@ -96,7 +97,7 @@ class SACAgent(Agent):
             # Target Values
             with torch.no_grad():
                 target_features = self.multihead_net(s_next_states)
-                next_actions, log_probs, _ = self.multihead_net.sample(target_features, add_noise=True)
+                next_actions, log_probs, _ = self.multihead_net.sample(target_features, add_noise=True, use_target=False)
                 critic_1_target, critic_2_target = self.multihead_net.get_target_critics(target_features, next_actions)
                 critic_target = torch.min(critic_1_target, critic_2_target)
                 target_value = critic_target - self.opts.entropy_scale*log_probs
@@ -119,15 +120,15 @@ class SACAgent(Agent):
             critic_1_curr, critic_2_curr = self.multihead_net.get_critics(features, actions)
             critic_curr = torch.min(critic_1_curr, critic_2_curr)
             actor_loss = (self.opts.entropy_scale*log_probs - critic_curr).mean()
-            actor_loss.backward()
+            actor_loss.backward(retain_graph=True)
             self.multihead_net.policy_optimizer.step()
 
             if self.multihead_net.base_net is not None:
                 self.multihead_net.base_optimizer.step()
 
-            # if n_iter % 2500 == 0:
-            #     print("Critic Loss 1: {}  - Critic Loss 2: {}  Value Loss: {} - Actor Loss: {}".format(critic_loss_1.item(), critic_loss_2.item(),
-            #     value_loss.item(), actor_loss.item()))
+            if n_iter % 2500 == 0:
+                print("Critic Loss 1: {}  - Critic Loss 2: {} - Actor Loss: {}".format(critic_loss_1.item(), critic_loss_2.item(),
+                 actor_loss.item()))
 
 
             if n_iter % 1 == 0:
@@ -150,7 +151,8 @@ class SACAgent(Agent):
                 break
             curr_state = env.reset()
             if type(curr_state) is not torch.Tensor:
-                curr_state = torch.from_numpy(curr_state).to(device).float().unsqueeze(0)
+                curr_state = torch.from_numpy(curr_state).to(device).float()
+            curr_state = curr_state.unsqueeze(0)
             episode_rewards = []
             step = 0
             while True:
@@ -180,9 +182,10 @@ class SACAgent(Agent):
                         self.exp_buffer.cluster(self.opts.n_clusters, self.opts.use_elbow_plot)
 
                 if type(next_state) is not torch.Tensor:
-                    next_state = torch.from_numpy(next_state).to(device).float().unsqueeze(0)
+                    next_state = torch.from_numpy(next_state).to(device).float()
+                next_state = next_state.unsqueeze(0)
 
-                self.exp_buffer.add_experience(curr_state.squeeze(0).cpu(), action, reward, next_state.squeeze(0).cpu(), done)   
+                self.exp_buffer.add_experience(curr_state.detach().cpu().squeeze(0), action, reward, next_state.detach().cpu().squeeze(0), done)   
     
                 if done:
                    
@@ -212,7 +215,7 @@ class SACAgent(Agent):
                     print("Saving at iteration {}".format(n_iter))
                     self.save_model(trnOpts.save_path)
                     self.save_rewards(trnOpts.save_path, all_rewards, avg_rewards)
-        
+
         
         return all_rewards, avg_rewards
 

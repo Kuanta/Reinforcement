@@ -1,18 +1,19 @@
 from Agents.SAC.SACAgent import SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
-from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper
+from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper, EncoderWrapper, TorchifyWrapper
 import torch
 import gym_duckietown.envs.duckietown_env as duckie
 from gym_duckietown.envs.duckietown_env import DuckietownEnv
 from duckie_networks import *
 import argparse
+from Encoder import BetaVAE_B, BetaVAE_H
 
 def test(args):
     duckie.logger.disabled = True # Disable log messages from ducki  
     env = DuckietownEnv(
         seed = None,
-        map_name = "zigzag_dists",
+        map_name = "4way_bordered",
         max_steps = 500001,
         draw_curve = False,
         draw_bbox = False,
@@ -25,12 +26,19 @@ def test(args):
         enable_leds = False,
     )
 
-    env = ResizeWrapper(env, 80, 80)
+     # Load Encoder
+    encoder = BetaVAE_H(10, 3)
+    loaded_model = torch.load(args.encoder_path)
+    encoder.load_state_dict(loaded_model['model_states']['net'])
+    env = ResizeWrapper(env, 64, 64)
     env = SwapDimensionsWrapper(env)
     env = ImageNormalizeWrapper(env)
+    env = TorchifyWrapper(env)
+    env = EncoderWrapper(env, encoder)
+    #env = ActionWrapper(env)
     env = GymEnvironment(env)
 
-    state_size = env.gym_env.observation_space.shape[0]
+    state_size = 14
     act_size = env.gym_env.action_space.shape[0]
     action_def = ContinuousDefinition(env.gym_env.action_space.shape, \
         env.gym_env.action_space.high, \
@@ -38,7 +46,7 @@ def test(args):
 
 
 
-    multihead_net = DuckieNetwork(3, act_size)
+    multihead_net = DuckieNetwork(state_size, act_size)
    
     agent = SACAgent(multihead_net, action_def)
    
@@ -64,7 +72,7 @@ def test(args):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--n-episodes", type=int, default=10, help="Number of episodes to play")
-parser.add_argument("--model-path", default="duckie_models/simple", type=str, help="Path to the model")
+parser.add_argument("--model-path", default="duckie_models/simple2", type=str, help="Path to the model")
 
 args = parser.parse_args()
 test(args)
