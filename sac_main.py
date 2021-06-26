@@ -1,10 +1,10 @@
-from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
+from Agents.SAC.SequentialSAC import SequentialSACAgentOptions, SequentialSACAgent, SACAgentOptions
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
 import Trainer as trn
 import gym
 import os, datetime
-from lunar_networks import LunarNetwork
+from lunar_networks import LunarNetwork, LunarNetworkLSTM
 
 TEST = False  #Set to true to see a trained agent playing Lunar Lander
 
@@ -15,11 +15,11 @@ action_def = ContinuousDefinition(env.gym_env.action_space.shape, \
     env.gym_env.action_space.high, \
     env.gym_env.action_space.low)
 
-opts = SACAgentOptions()
+opts = SequentialSACAgentOptions()
 
 opts.exp_buffer_size = 100000
 opts.learning_rate = 0.0003
-opts.exp_batch_size = 256
+opts.exp_batch_size = 64
 opts.tau = 0.005
 opts.use_gpu = True
 opts.clustering = False
@@ -31,9 +31,12 @@ opts.n_episodes_exploring_least_acts = 250 #Nubmer of episodes that explores by 
 opts.update_cluster_scale = 5 # When to create new clusters? See classify in ExperienceBuffer
 opts.cluster_only_for_buffer = True   # If set to true, clustered exploration will only be used for replay buffer filling
 opts.render = False
+opts.sequence_length = 8
+opts.save_frequency = -1
+opts.auto_entropy = True
 
-multihead_net = LunarNetwork(state_size, action_size=act_size)
-agent = SACAgent(multihead_net, action_def, opts)
+multihead_net = LunarNetworkLSTM(state_size, 128, action_size=act_size)
+agent = SequentialSACAgent(multihead_net, action_def, opts)
 
 
 if  TEST:
@@ -51,16 +54,11 @@ if  TEST:
                 break
             env.render()
 else:
-    time = str(datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-    if agent.opts.clustering:
-        save_path = os.path.join("./sac_model/cluster_2/", time)
-    else:
-        save_path = os.path.join("./sac_model/no_cluster/", time)
+    
     trnOpts = trn.TrainOpts()
     trnOpts.n_epochs = 1
     trnOpts.n_episodes = 500
-    trnOpts.save_path = save_path
+    trnOpts.save_path = "test"
 
     trainer = trn.Trainer(agent, env, trnOpts)
     trainer.train()
-    agent.save_model(save_path)

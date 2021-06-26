@@ -2,7 +2,7 @@ from torch.serialization import save
 from Agents.SAC.SACAgent import SACAgentOptions, SACAgent
 from Environments.GymEnvironment import GymEnvironment
 from Environments.Environment import ContinuousDefinition
-from Environments.wrappers import ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper, EncoderWrapper, ActionWrapper, TorchifyWrapper
+from Environments.wrappers import DtRewardWrapper, ResizeWrapper, SwapDimensionsWrapper, ImageNormalizeWrapper, EncoderWrapper, ActionWrapper, TorchifyWrapper
 import Trainer as trn
 import torch
 import torch.nn as nn
@@ -14,7 +14,7 @@ import os, datetime, argparse
 from duckie_networks import *
 from Encoder import BetaVAE_B, BetaVAE_H
 
-def train(args, agent_opts, train_opts):
+def train(args, agent_opts, train_opts, rewards=None):
     duckie.logger.disabled = True # Disable log messages from ducki  
     env = DuckietownEnv(
         seed = None,
@@ -29,7 +29,10 @@ def train(args, agent_opts, train_opts):
         user_tile_start = None,
         num_tris_distractors = 12,
         enable_leds = False,
-        navigation=True
+        navigation=True,
+        num_past_navdirs = 3,
+        num_past_positions = 3,
+        num_past_actions = 2,
     )
 
     # Load Encoder
@@ -41,10 +44,11 @@ def train(args, agent_opts, train_opts):
     env = ImageNormalizeWrapper(env)
     env = TorchifyWrapper(env, agent_opts.use_gpu)
     env = EncoderWrapper(env, encoder, agent_opts.use_gpu)
-    #env = ActionWrapper(env)
+    #env = DtRewardWrapper(env)
+    env = ActionWrapper(env)
     env = GymEnvironment(env)
 
-    state_size = 14  # Bottleneck of VAE
+    state_size = 31  # Bottleneck of VAE plus the additional informations
     act_size = env.gym_env.action_space.shape[0]
     action_def = ContinuousDefinition(env.gym_env.action_space.shape, \
         env.gym_env.action_space.high, \
@@ -53,9 +57,6 @@ def train(args, agent_opts, train_opts):
     multihead_net = DuckieNetwork(state_size, act_size)
    
     agent = SACAgent(multihead_net, action_def, agent_opts)
-    
-    if args.checkpoint_path is not None:
-        agent.load_model(args.checkpoint_path)
 
     trainer = trn.Trainer(agent, env, train_opts)
     trainer.train()
@@ -70,10 +71,10 @@ parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
 parser.add_argument("--l-rate", type=float, default=0.0002, help="Learning rate for the network")
 parser.add_argument("--use-gpu", action="store_true", default=True, help="Set to true to use gpu")
 parser.add_argument("--tau", type=float, default=0.005, help="Used to update target network with polyak update")
-parser.add_argument("--save-path", type=str, default="duckie_models/simple3", help="Path to save the model")
+parser.add_argument("--save-path", type=str, default="duckie_models/navigation", help="Path to save the model")
 parser.add_argument("--save-freq", type=int, default=10000, help="Number of iterations to save the model")
-parser.add_argument("--checkpoint-path", type=str, default=None, help="Path to checkpoint. Use it to resume training")
-parser.add_argument("--entropy-scale", type=float, default=0.5, help="Entropy scale used in loss functions")
+parser.add_argument("--checkpoint-path", type=str, default="duckie_models/navigation/20210626-112148/multihead", help="Path to checkpoint. Use it to resume training")
+parser.add_argument("--entropy-scale", type=float, default=0.2, help="Entropy scale used in loss functions")
 parser.add_argument("--encoder-path", type=str, default="encoder_model/last", help="Path to the saved encoder model")
 
 args = parser.parse_args()
@@ -95,6 +96,6 @@ train_opts.n_epochs = 1
 train_opts.n_episodes = args.n_episodes
 train_opts.n_iterations = args.n_iterations # run for 100k iterations
 train_opts.save_path = args.save_path
+train_opts.checkpoint = args.checkpoint_path
 
 train(args, opts, train_opts)
-64, 64

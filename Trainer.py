@@ -17,6 +17,7 @@ class TrainOpts:
         self.n_episodes = 100  # Number of episodes to run before calling the learn method of the agent
         self.n_iterations = -1
         self.save_path = "./tmp"
+        self.checkpoint = None
 
 
 class Trainer:
@@ -25,8 +26,9 @@ class Trainer:
         self.env = env
         self.opts = opts
 
-    def train(self):
+    def train(self, checkpoint_name=None):
         if self.opts.episodic:
+                
             all_rewards, avg_rewards = self.agent.learn(self.env, self.opts)
             info = {"Rewards":all_rewards, "Averages":avg_rewards}
             if not os.path.exists(self.opts.save_path):
@@ -37,6 +39,10 @@ class Trainer:
         else:
             # TODO: Implement continuous training
             pass
+    def load_checkpoint(self, root, net_name):
+        filename = os.path.join(root, net_name)
+        rewards = os.path.join(root, "rewards")
+        self.agent.load_model(filename)
 
     def test(self):
         if self.opts.episodic:

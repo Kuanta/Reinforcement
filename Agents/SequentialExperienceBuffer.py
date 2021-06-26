@@ -13,10 +13,10 @@ class Episode:
     
     def add_transition(self, state, action, reward, next_state, done_flag):
         self.states.append(state)
-        self.actions.append(action)
+        self.actions.append(torch.tensor(action))
         self.rewards.append(reward)
         self.next_states.append(next_state)
-        self.done_flags.append(done_flag)
+        self.done_flags.append(int(done_flag))
 
 class SequentialExperienceBuffer:
     def __init__(self,n_episodes, n_sequence): 
@@ -34,7 +34,7 @@ class SequentialExperienceBuffer:
         if len(self.episodes) > self.n_episodes:
             self.episodes.pop(0)
     
-    def sample(self, n_episodes, sequence_length):
+    def sample(self, n_episodes, sequence_length, device):
         if len(self.episodes) < n_episodes:
             return None
         episodes = random.sample(self.episodes, n_episodes)
@@ -48,10 +48,10 @@ class SequentialExperienceBuffer:
             sampled_states.append(torch.stack(episode.states[start:start+sequence_length]))
             sampled_actions.append(torch.stack(episode.actions[start:start+sequence_length]))
             sampled_rewards.append(torch.tensor(episode.rewards[start:start+sequence_length]))
-
-            # For next_states and done_flags, return only the last element
-            sampled_next_states.append(torch.stack(episode.next_states[start+sequence_length-1]))
-            sampled_done_flags.append(torch.tensor(episode.done_flags[start+sequence_length-1]))
+            sampled_next_states.append(torch.stack(episode.next_states[start:start+sequence_length]))
+            sampled_done_flags.append(torch.tensor(episode.done_flags[start:start+sequence_length]))
         
-        return torch.stack(sampled_states), torch.stack(sampled_actions)
+        return torch.stack(sampled_states).float().to(device), \
+         torch.stack(sampled_actions).float().to(device), \
+         torch.stack(sampled_rewards).float().to(device), torch.stack(sampled_next_states).float().to(device), torch.stack(sampled_done_flags).float().to(device)
 
